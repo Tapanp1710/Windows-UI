@@ -425,6 +425,26 @@ itemsEl.addEventListener("auxclick", (e) => {
   }
 });
 
+/**
+ * Right-clicking the dock itself (not an icon) opens the app menu.
+ *
+ * This is the only reachable way to quit while the dock is running: the tray icon
+ * lives in the notification area, which is part of the Windows taskbar we hide, so it
+ * cannot be clicked until the top bar (PHASE 2) exposes the tray overflow.
+ */
+dockEl.addEventListener("contextmenu", (e) => {
+  if (itemFor(e.target)) return; // an icon handles its own menu
+  e.preventDefault();
+  void openMenu(dockEl, [
+    { label: "Settings…", action: () => {}, disabled: true },
+    { label: "Restart UI", action: () => void invoke("cmd_app_restart") },
+    {
+      label: "Quit (restores the Windows taskbar)",
+      action: () => void invoke("cmd_app_quit"),
+    },
+  ]);
+});
+
 itemsEl.addEventListener("contextmenu", (e) => {
   e.preventDefault();
   const hit = itemFor(e.target);

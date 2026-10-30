@@ -113,8 +113,15 @@ fn main() {
             cmd_window_titles,
             cmd_open_start_menu,
             cmd_log,
+            cmd_app_quit,
+            cmd_app_restart,
         ])
         .setup(|app| {
+            if let Err(e) = build_tray(app.handle()) {
+                // A missing tray icon is not fatal, but it removes the only
+                // discoverable way to quit, so say so loudly in the log.
+                logln!("WARNING: could not create the tray icon ({e}); quit via restore-windows.ps1");
+            }
             // Prove the embedded frontend is actually reachable. A blank window with
             // no error is otherwise indistinguishable from a CSS bug, and these two
             // lines turn that into a one-line answer in the log.
@@ -184,6 +191,58 @@ fn cmd_screen_metrics(window: tauri::Window) -> ScreenMetrics {
 #[tauri::command]
 fn cmd_restore_now() {
     restore_windows_state();
+}
+
+/// System-tray icon: the supported way to quit.
+///
+/// Without this the only way to stop a shell replacement is Task Manager, which kills
+/// the whole process tree — watchdog included — and that is exactly the one case where
+/// the taskbar does not come back on its own. Quit here always restores Windows first.
+fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+    use tauri::tray::TrayIconBuilder;
+
+    let restart = MenuItem::with_id(app, "restart", "Restart UI", true, None::<&str>)?;
+    let normal = MenuItem::with_id(
+        app,
+        "normal",
+        "Return to normal Windows",
+        true,
+        None::<&str>,
+    )?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let sep = PredefinedMenuItem::separator(app)?;
+    let menu = Menu::with_items(app, &[&restart, &normal, &sep, &quit])?;
+
+    TrayIconBuilder::with_id("macui-tray")
+        .icon(
+            app.default_window_icon()
+                .cloned()
+                .expect("the app icon is embedded at build time, so this cannot be absent"),
+        )
+        .tooltip("macui — macOS-inspired UI layer")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "quit" => {
+                restore_windows_state();
+                app.exit(0);
+            }
+            "normal" => {
+                // Same code path as a crash restore and as restore-windows.ps1:
+                // put Windows back, then stand down.
+                restore_windows_state();
+                app.exit(0);
+            }
+            "restart" => {
+                restore_windows_state();
+                app.restart();
+            }
+            _ => {}
+        })
+        .build(app)?;
+
+    Ok(())
 }
 
 /// Settings the frontend mirrors onto `<html>` so CSS can react to them.
@@ -315,6 +374,19 @@ fn cmd_window_titles(hwnds: Vec<isize>) -> Vec<String> {
 #[tauri::command]
 fn cmd_log(msg: String) {
     logln!("[ui] {msg}");
+}
+
+/// Quit, always putting Windows back first.
+#[tauri::command]
+fn cmd_app_quit(app: tauri::AppHandle) {
+    restore_windows_state();
+    app.exit(0);
+}
+
+#[tauri::command]
+fn cmd_app_restart(app: tauri::AppHandle) {
+    restore_windows_state();
+    app.restart();
 }
 
 #[tauri::command]
