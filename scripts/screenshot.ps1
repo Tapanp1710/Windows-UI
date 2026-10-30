@@ -26,6 +26,26 @@ param(
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
 
+# This display runs at 150% scaling. A DPI-unaware process is handed a virtualised
+# 1280x720 desktop and its capture comes back blurry and 1.5x too small, which hides
+# exactly the 1px borders and 12px margins the visual check exists to verify.
+# Declaring per-monitor-v2 awareness first makes CopyFromScreen return true 1920x1080.
+Add-Type -TypeDefinition @'
+using System; using System.Runtime.InteropServices;
+public static class DpiAware {
+    [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr v);
+    [DllImport("shcore.dll")] static extern int SetProcessDpiAwareness(int v);
+    [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+    public static string Enable() {
+        try { if (SetProcessDpiAwarenessContext(new IntPtr(-4))) return "per-monitor-v2"; } catch {}
+        try { if (SetProcessDpiAwareness(2) == 0) return "per-monitor"; } catch {}
+        try { if (SetProcessDPIAware()) return "system"; } catch {}
+        return "none";
+    }
+}
+'@ -ErrorAction SilentlyContinue
+$dpiMode = [DpiAware]::Enable()
+
 if (-not $OutDir) { $OutDir = Join-Path $PSScriptRoot '..\screenshots' }
 $OutDir = [IO.Path]::GetFullPath($OutDir)
 if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Force -Path $OutDir | Out-Null }
@@ -70,4 +90,5 @@ for ($i = 1; $i -le $Count; $i++) {
 }
 
 Write-Output ""
-Write-Output ("{0} frame(s) -> {1}" -f $written.Count, $OutDir)
+Write-Output ("{0} frame(s) at {1}x{2} (dpi awareness: {3}) -> {4}" -f `
+    $written.Count, $bounds.Width, $bounds.Height, $dpiMode, $OutDir)
