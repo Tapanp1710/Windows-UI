@@ -36,13 +36,19 @@
   </head>
   <body>
     <!-- The slide-up/down wrapper. The window itself never animates; moving a
-         Win32 window every frame is where dock jank comes from. -->
-    <div id="slider" class="slider">
+         Win32 window every frame is where dock jank comes from.
+
+         Starts in the CONCEALED state on purpose. The Rust sampler also starts
+         concealed and only emits on a *change*, so if this started revealed the two
+         would disagree until the first full reveal-then-leave cycle, and a freshly
+         started dock would sit there permanently visible. -->
+    <div id="slider" class="slider hidden no-anim">
       <div id="dock" class="dock glass" role="toolbar" aria-label="Dock">
         <div id="items" class="items"></div>
       </div>
     </div>
     <div id="tooltip" class="tooltip" role="tooltip" aria-hidden="true"></div>
+    <div id="menu" class="menu" role="menu"></div>
     <script type="module" src="./dock/dock.ts"></script>
   </body>
 </html>

@@ -20,7 +20,13 @@ param(
     [int]$DelayMs = 0,
     # 1.0 = native 1920x1080. 0.5 halves each dimension.
     [double]$Scale = 1.0,
-    [string]$OutDir
+    [string]$OutDir,
+    # Animation triggers, fired from inside the capture loop so the timing is
+    # deterministic instead of racing a separate process's startup.
+    # Moves the pointer to the bottom edge (summons the dock) after frame N.
+    [int]$TriggerBottomEdgeAfterFrame = 0,
+    # Moves the pointer away from the edge after frame N (dismisses the dock).
+    [int]$TriggerLeaveAfterFrame = 0
 )
 
 Add-Type -AssemblyName System.Drawing
@@ -56,8 +62,21 @@ $stamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
 
 if ($DelayMs -gt 0) { Start-Sleep -Milliseconds $DelayMs }
 
+Add-Type -TypeDefinition @'
+using System; using System.Runtime.InteropServices;
+public static class Pointer {
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+}
+'@ -ErrorAction SilentlyContinue
+
 $written = New-Object System.Collections.Generic.List[string]
 $sw = [Diagnostics.Stopwatch]::StartNew()
+
+# Capture into memory first and encode afterwards. PNG encoding a 1920x1080 frame
+# costs well over 100 ms, which is longer than the 150-250 ms animations we are
+# trying to inspect — encoding inside the loop made every burst look like a still.
+$frames = New-Object System.Collections.Generic.List[object]
+$stamps = New-Object System.Collections.Generic.List[int]
 
 for ($i = 1; $i -le $Count; $i++) {
 
@@ -66,6 +85,21 @@ for ($i = 1; $i -le $Count; $i++) {
     $gfx.CopyFromScreen($bounds.X, $bounds.Y, 0, 0, $bmp.Size)
     $gfx.Dispose()
 
+    $frames.Add($bmp)
+    $stamps.Add([int]$sw.Elapsed.TotalMilliseconds)
+
+    if ($TriggerBottomEdgeAfterFrame -gt 0 -and $i -eq $TriggerBottomEdgeAfterFrame) {
+        [void][Pointer]::SetCursorPos([int]($bounds.Width / 2), $bounds.Height - 1)
+    }
+    if ($TriggerLeaveAfterFrame -gt 0 -and $i -eq $TriggerLeaveAfterFrame) {
+        [void][Pointer]::SetCursorPos([int]($bounds.Width / 2), [int]($bounds.Height / 3))
+    }
+
+    if ($i -lt $Count -and $IntervalMs -gt 0) { Start-Sleep -Milliseconds $IntervalMs }
+}
+
+for ($i = 0; $i -lt $frames.Count; $i++) {
+    $bmp = $frames[$i]
     $out = $bmp
     if ($Scale -ne 1.0) {
         $w = [int]($bounds.Width * $Scale); $h = [int]($bounds.Height * $Scale)
@@ -73,20 +107,19 @@ for ($i = 1; $i -le $Count; $i++) {
         $g2 = [System.Drawing.Graphics]::FromImage($small)
         $g2.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
         $g2.DrawImage($bmp, 0, 0, $w, $h)
-        $g2.Dispose(); $bmp.Dispose()
+        $g2.Dispose()
         $out = $small
     }
 
     $name = if ($Count -eq 1) { "${stamp}_${Label}.png" }
-            else { "${stamp}_${Label}_{0:D2}.png" -f $i }
+            else { "${stamp}_${Label}_{0:D2}.png" -f ($i + 1) }
     $path = Join-Path $OutDir $name
     $out.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
-    $out.Dispose()
+    if ($out -ne $bmp) { $out.Dispose() }
+    $bmp.Dispose()
 
     $written.Add($path)
-    Write-Output ("{0}  (+{1} ms)" -f $path, [int]$sw.Elapsed.TotalMilliseconds)
-
-    if ($i -lt $Count -and $IntervalMs -gt 0) { Start-Sleep -Milliseconds $IntervalMs }
+    Write-Output ("{0}  (captured at +{1} ms)" -f $path, $stamps[$i])
 }
 
 Write-Output ""

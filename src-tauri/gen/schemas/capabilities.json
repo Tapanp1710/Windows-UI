@@ -1,1 +1,1 @@
-{}
+{"default":{"identifier":"default","description":"Permissions for the UI layer's own windows. App-defined commands (cmd_*) are allowed by default; the core permissions below are what the frontend needs on top of that: listening for the dock's reveal/conceal events, and showing/sizing its own window.","local":true,"windows":["dock","topbar","launcher","switcher","widgets","settings"],"permissions":["core:default","core:event:default","core:window:default","core:webview:default","core:app:default"]}}

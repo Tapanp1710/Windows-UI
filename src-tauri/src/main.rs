@@ -3,8 +3,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod autohide;
+mod dock_model;
 #[macro_use]
 mod log;
+mod settings;
 mod watchdog;
 mod win;
 
@@ -22,12 +24,17 @@ static RESTORED: AtomicBool = AtomicBool::new(false);
 /// The watchdog child, killed on a clean shutdown so it does not fire a redundant
 /// restore after we have already done one.
 static WATCHDOG: Mutex<Option<std::process::Child>> = Mutex::new(None);
+/// Kept alive for the life of the app; cleared on shutdown to stop the sampler.
+static AUTOHIDE_RUNNING: Mutex<Option<std::sync::Arc<AtomicBool>>> = Mutex::new(None);
 
 /// Put Windows back exactly as we found it. Idempotent and safe to call from any
 /// shutdown path.
 fn restore_windows_state() {
     if RESTORED.swap(true, Ordering::SeqCst) {
         return;
+    }
+    if let Some(flag) = AUTOHIDE_RUNNING.lock().unwrap().take() {
+        flag.store(false, Ordering::SeqCst);
     }
     let state = *ORIGINAL_APPBAR_STATE.lock().unwrap();
     win::taskbar::full_restore(state);
@@ -50,6 +57,8 @@ fn main() {
     // --- normal startup ------------------------------------------------------
     log::init("main");
     win::init_dpi_awareness();
+    // Shell interfaces (icon extraction, ShellExecute) need COM on this thread.
+    win::init_com();
 
     let original_state = win::taskbar::appbar_state();
     *ORIGINAL_APPBAR_STATE.lock().unwrap() = Some(original_state);
@@ -94,6 +103,16 @@ fn main() {
             cmd_restore_now,
             cmd_resize_dock,
             cmd_system_prefs,
+            cmd_dock_items,
+            cmd_dock_activate,
+            cmd_dock_launch,
+            cmd_dock_close_window,
+            cmd_dock_set_pinned_order,
+            cmd_dock_unpin,
+            cmd_dock_pin,
+            cmd_window_titles,
+            cmd_open_start_menu,
+            cmd_log,
         ])
         .setup(|app| {
             // Prove the embedded frontend is actually reachable. A blank window with
@@ -112,7 +131,10 @@ fn main() {
                 assets.iter().any(|k| k.ends_with("dock.html"))
             );
             position_dock(app.handle())?;
-            autohide::start(app.handle().clone());
+            AUTOHIDE_RUNNING
+                .lock()
+                .unwrap()
+                .replace(autohide::start(app.handle().clone()));
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -170,15 +192,134 @@ fn cmd_restore_now() {
 struct SystemPrefs {
     animations: bool,
     icon_shape: String,
+    theme: String,
+    animation_speed: f64,
+    magnification: bool,
+    always_visible: bool,
 }
 
 #[tauri::command]
 fn cmd_system_prefs() -> SystemPrefs {
+    let s = settings::load();
     SystemPrefs {
+        // Respect Windows' own animation setting as well as ours.
         animations: win::animations_enabled(),
-        // Settings will own this in PHASE 6; the design's default is a circle.
-        icon_shape: "circle".to_string(),
+        icon_shape: s.icon_shape,
+        theme: s.theme,
+        animation_speed: s.animation_speed,
+        magnification: s.dock_magnification,
+        always_visible: s.dock_always_visible,
     }
+}
+
+/// Everything the dock draws. Called on a timer by the frontend.
+#[tauri::command]
+fn cmd_dock_items() -> Vec<dock_model::DockItem> {
+    dock_model::build()
+}
+
+/// A left-click on a dock button, with the taskbar's exact semantics:
+///   - nothing running        -> launch it
+///   - running, not focused   -> bring it to the front
+///   - running and focused    -> minimise it
+///
+/// With several windows the frontend asks for a chooser instead, so this only ever
+/// receives a single concrete hwnd in that case.
+#[tauri::command]
+fn cmd_dock_activate(hwnd: isize) {
+    let focused = win::apps::foreground_window().map(|h| h.0 as isize);
+    if focused == Some(hwnd) {
+        win::apps::minimize(hwnd);
+    } else {
+        win::apps::activate(hwnd);
+    }
+}
+
+/// Launch (or start a new instance of) whatever the button points at.
+#[tauri::command]
+fn cmd_dock_launch(parsing_name: String) -> bool {
+    win::pins::launch(&parsing_name)
+}
+
+#[tauri::command]
+fn cmd_dock_close_window(hwnd: isize) {
+    win::apps::close_window(hwnd);
+}
+
+/// Persist the order after a drag-to-reorder.
+#[tauri::command]
+fn cmd_dock_set_pinned_order(ids: Vec<String>) {
+    settings::update(|s| {
+        let mut reordered = Vec::with_capacity(s.pinned.len());
+        for id in &ids {
+            if let Some(p) = s.pinned.iter().find(|p| &p.id == id) {
+                reordered.push(p.clone());
+            }
+        }
+        // Anything not named in `ids` keeps its place at the end rather than being
+        // silently dropped.
+        for p in &s.pinned {
+            if !reordered.iter().any(|q| q.id == p.id) {
+                reordered.push(p.clone());
+            }
+        }
+        s.pinned = reordered;
+    });
+}
+
+#[tauri::command]
+fn cmd_dock_unpin(id: String) {
+    settings::update(|s| s.pinned.retain(|p| p.id != id));
+}
+
+#[tauri::command]
+fn cmd_dock_pin(name: String, parsing_name: String) {
+    let target = Some(parsing_name.to_lowercase());
+    let id = format!("pin:{}", name.to_lowercase());
+    settings::update(|s| {
+        if s.pinned.iter().any(|p| p.id == id) {
+            return;
+        }
+        s.pinned.push(settings::PinnedEntry {
+            id: id.clone(),
+            name: name.clone(),
+            parsing_name: parsing_name.clone(),
+            target: target.clone(),
+        });
+    });
+}
+
+/// Titles for the grouped-window chooser.
+#[tauri::command]
+fn cmd_window_titles(hwnds: Vec<isize>) -> Vec<String> {
+    let all = win::apps::list_windows();
+    hwnds
+        .into_iter()
+        .map(|h| {
+            all.iter()
+                .find(|w| w.hwnd == h)
+                .map(|w| w.title.clone())
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+/// Open the real Windows Start menu.
+///
+/// Until PHASE 3 ships the launcher, the Start button must still do the correct
+/// Windows thing rather than nothing. This synthesises the same Ctrl+Esc that has
+/// opened Start since Windows 95 — it is the documented, non-invasive way to ask the
+/// shell to show it, and it does not remap or consume any key.
+/// Lets the frontend write into the same log file as the backend. These windows have
+/// no console the user can open, so without this a frontend failure is invisible.
+#[tauri::command]
+fn cmd_log(msg: String) {
+    logln!("[ui] {msg}");
+}
+
+#[tauri::command]
+fn cmd_open_start_menu() {
+    win::press_ctrl_esc();
 }
 
 /// Resize the dock window to the island's measured size, then re-centre it.
@@ -201,6 +342,9 @@ fn reposition(window: &tauri::Window) -> tauri::Result<()> {
     let x = (sw - size.width as i32) / 2;
     let y = sh - size.height as i32;
     window.set_position(tauri::PhysicalPosition::new(x, y))?;
+    // Publish for the auto-hide sampler, which must never call back into the
+    // window from its own thread (see autohide.rs).
+    autohide::publish_rect(x, y, size.width as i32, size.height as i32);
     Ok(())
 }
 

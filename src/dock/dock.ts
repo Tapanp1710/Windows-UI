@@ -2,12 +2,14 @@
  * Dock — visual replacement for the Windows taskbar.
  *
  * Division of labour with the Rust side:
- *   - Rust owns anything Win32: which apps exist, their icons, focus, and the
- *     cursor-at-the-bottom-edge test that drives auto-hide.
- *   - This file owns layout and motion only. The Win32 window is resized once when
- *     the item list changes and otherwise never moves; the slide animation is a CSS
- *     transform inside a stationary window, because moving a real window every frame
- *     is what makes docks stutter.
+ *   - Rust owns anything Win32: which apps exist, their icons, focus, launching, and
+ *     the cursor-at-the-bottom-edge test that drives auto-hide.
+ *   - This file owns layout and motion only. The Win32 window is resized when the item
+ *     list changes and otherwise never moves; the slide animation is a CSS transform
+ *     inside a stationary window, because moving a real window every frame is what
+ *     makes docks stutter.
+ *
+ * Click behaviour deliberately mirrors the Windows taskbar exactly — see onClick().
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -26,30 +28,48 @@ const MAG_FAR = 1.02;
 const LIFT_HOVER = 4;
 const LIFT_NEIGHBOUR = 2;
 
-type ItemKind = "start" | "app" | "recycle";
+/** How often to re-read the app list. Cheap: icons are cached in Rust. */
+const REFRESH_MS = 1000;
 
 interface DockItem {
   id: string;
-  kind: ItemKind;
+  kind: "start" | "app" | "recycle";
   name: string;
-  /** Data URL of the extracted icon, or null for drawn items (Start). */
   icon: string | null;
   running: boolean;
-  /** More than one top-level window -> grouped, wider indicator. */
   windowCount: number;
   attention: boolean;
-  /** 0..1, or null when the app reports no progress. */
   progress: number | null;
   progressState: "none" | "normal" | "indeterminate" | "error" | "paused";
   pinned: boolean;
+  hwnds: number[];
+  parsingName: string | null;
+}
+
+interface SystemPrefs {
+  animations: boolean;
+  iconShape: string;
+  theme: string;
+  animationSpeed: number;
+  magnification: boolean;
+  alwaysVisible: boolean;
 }
 
 const itemsEl = document.getElementById("items") as HTMLDivElement;
 const dockEl = document.getElementById("dock") as HTMLDivElement;
 const sliderEl = document.getElementById("slider") as HTMLDivElement;
 const tooltipEl = document.getElementById("tooltip") as HTMLDivElement;
+const menuEl = document.getElementById("menu") as HTMLDivElement;
 
 let items: DockItem[] = [];
+let prefs: SystemPrefs = {
+  animations: true,
+  iconShape: "circle",
+  theme: "auto",
+  animationSpeed: 1,
+  magnification: true,
+  alwaysVisible: false,
+};
 const nodes = new Map<string, HTMLDivElement>();
 
 /* ------------------------------------------------------------------ render */
@@ -75,6 +95,7 @@ function buildNode(item: DockItem): HTMLDivElement {
   el.setAttribute("role", "button");
   el.setAttribute("aria-label", item.name);
   el.tabIndex = -1;
+  el.draggable = item.pinned;
 
   const plate = document.createElement("div");
   plate.className = "plate";
@@ -87,7 +108,7 @@ function buildNode(item: DockItem): HTMLDivElement {
     img.src = item.icon;
     img.alt = "";
     plate.appendChild(img);
-  } else {
+  } else if (item.kind === "recycle") {
     plate.innerHTML = RECYCLE_SVG;
     plate.style.color = "var(--text-dim)";
   }
@@ -108,6 +129,7 @@ function applyState(el: HTMLDivElement, item: DockItem): void {
   el.classList.toggle("running", item.running);
   el.classList.toggle("grouped", item.windowCount > 1);
   el.classList.toggle("attention", item.attention);
+  el.setAttribute("aria-label", item.name);
 
   const hasProgress = item.progressState !== "none";
   el.classList.toggle("has-progress", hasProgress);
@@ -118,6 +140,22 @@ function applyState(el: HTMLDivElement, item: DockItem): void {
     const bar = el.querySelector(".progress > i") as HTMLElement | null;
     if (bar) bar.style.width = `${Math.round(item.progress * 100)}%`;
   }
+}
+
+/** Icon URL changes are rare; swapping src every tick would flicker. */
+function syncIcon(el: HTMLDivElement, item: DockItem): void {
+  if (!item.icon) return;
+  const img = el.querySelector("img") as HTMLImageElement | null;
+  if (img) {
+    if (img.src !== item.icon) img.src = item.icon;
+    return;
+  }
+  const plate = el.querySelector(".plate") as HTMLElement;
+  plate.textContent = "";
+  const fresh = document.createElement("img");
+  fresh.src = item.icon;
+  fresh.alt = "";
+  plate.appendChild(fresh);
 }
 
 function render(): void {
@@ -137,6 +175,7 @@ function render(): void {
       nodes.set(item.id, el);
     }
     applyState(el, item);
+    syncIcon(el, item);
     frag.appendChild(el);
     seen.add(item.id);
   });
@@ -157,40 +196,63 @@ function render(): void {
 let lastSize = { w: 0, h: 0 };
 
 /**
+ * Extra transparent space reserved ABOVE the dock.
+ *
+ * A transparent window clips anything drawn outside its rect, so a tooltip or a
+ * context menu positioned above the dock is invisible unless the window is tall
+ * enough to contain it. The window is also always-on-top, though, so every pixel of
+ * headroom is a pixel that stops clicks reaching what is underneath — which would be
+ * a real change to how Windows behaves.
+ *
+ * So headroom is granted only while a popup actually needs it, and given back as soon
+ * as it closes. While it is granted the pointer is already on the dock or on the menu,
+ * so the reserved strip is exactly where the user is looking anyway.
+ */
+let headroom = 0;
+const TOOLTIP_HEADROOM = 46;
+
+function setHeadroom(px: number): void {
+  if (px === headroom) return;
+  headroom = px;
+  void resizeWindowToContent();
+}
+
+/**
  * Size the Win32 window to exactly the dock plus shadow padding.
  *
  * This matters for behaviour, not just looks: the window is always-on-top and
- * transparent, so any area it covers stops clicks reaching the desktop underneath.
+ * transparent, so any area it covers stops clicks reaching whatever is underneath.
  * Keeping it tight to the island means the rest of the screen behaves normally.
  */
 async function resizeWindowToContent(): Promise<void> {
-  // Let layout settle so offsetWidth reflects the new children.
   await new Promise(requestAnimationFrame);
 
-  const w = Math.ceil(dockEl.offsetWidth) + SHADOW_PAD * 2;
-  const h = Math.ceil(dockEl.offsetHeight) + SHADOW_PAD * 2;
+  const dockW = Math.ceil(dockEl.offsetWidth) + SHADOW_PAD * 2;
+  const popupW = menuEl.classList.contains("show")
+    ? Math.ceil(menuEl.offsetWidth) + SHADOW_PAD * 2
+    : 0;
+
+  const w = Math.max(dockW, popupW);
+  const h = Math.ceil(dockEl.offsetHeight) + SHADOW_PAD * 2 + headroom;
   if (w === lastSize.w && h === lastSize.h) return;
   lastSize = { w, h };
 
   await invoke("cmd_resize_dock", { cssWidth: w, cssHeight: h });
+  // The window moved, so anything anchored to the dock needs re-anchoring.
+  await new Promise(requestAnimationFrame);
 }
 
 /* ------------------------------------------------------- magnification */
 
-/**
- * Scale each icon by its distance from the pointer.
- *
- * Distance is measured in "icons away" rather than pixels so the falloff looks the
- * same whatever the configured dock size.
- */
 function applyMagnification(hoverIndex: number | null): void {
+  const on = prefs.magnification;
   items.forEach((item, i) => {
     const el = nodes.get(item.id);
     if (!el) return;
 
     let mag = 1;
     let lift = 0;
-    if (hoverIndex !== null) {
+    if (on && hoverIndex !== null) {
       const d = Math.abs(i - hoverIndex);
       if (d === 0) {
         mag = MAG_HOVER;
@@ -213,13 +275,15 @@ let tooltipTimer: number | undefined;
 
 function showTooltip(el: HTMLElement, text: string): void {
   window.clearTimeout(tooltipTimer);
-  tooltipTimer = window.setTimeout(() => {
+  tooltipTimer = window.setTimeout(async () => {
     tooltipEl.textContent = text;
+    // Reserve the strip the tooltip will occupy, then let layout settle before
+    // measuring, or the tooltip lands at a stale position.
+    setHeadroom(Math.max(headroom, TOOLTIP_HEADROOM));
+    await new Promise(requestAnimationFrame);
     tooltipEl.classList.add("show");
     tooltipEl.setAttribute("aria-hidden", "false");
 
-    // Measure after the text is in, then centre above the icon and keep it inside
-    // the window so it is never clipped by the transparent window edge.
     const r = el.getBoundingClientRect();
     const tw = tooltipEl.offsetWidth;
     const x = Math.min(
@@ -235,26 +299,74 @@ function hideTooltip(): void {
   window.clearTimeout(tooltipTimer);
   tooltipEl.classList.remove("show");
   tooltipEl.setAttribute("aria-hidden", "true");
+  if (!menuEl.classList.contains("show")) setHeadroom(0);
 }
+
+/* ------------------------------------------------------------ popup menu */
+
+type MenuEntry = { label: string; action: () => void; disabled?: boolean };
+
+function closeMenu(): void {
+  if (!menuEl.classList.contains("show")) return;
+  menuEl.classList.remove("show");
+  menuEl.textContent = "";
+  setHeadroom(0);
+}
+
+async function openMenu(anchor: HTMLElement, entries: MenuEntry[]): Promise<void> {
+  menuEl.textContent = "";
+  for (const e of entries) {
+    const b = document.createElement("button");
+    b.className = "menu-item";
+    b.textContent = e.label;
+    b.disabled = !!e.disabled;
+    b.addEventListener("click", () => {
+      closeMenu();
+      e.action();
+    });
+    menuEl.appendChild(b);
+  }
+  menuEl.classList.add("show");
+
+  // Measure once visible, reserve exactly that much headroom, then anchor.
+  await new Promise(requestAnimationFrame);
+  // The icon sits SHADOW_PAD + the dock's own padding below the window top, so the
+  // headroom has to cover the menu plus that offset. Measure after a frame so the
+  // height reflects the real laid-out entries, not a pre-layout guess.
+  setHeadroom(menuEl.offsetHeight + SHADOW_PAD + 16);
+  await resizeWindowToContent();
+
+  const r = anchor.getBoundingClientRect();
+  const mw = menuEl.offsetWidth;
+  const x = Math.min(
+    Math.max(4, r.left + r.width / 2 - mw / 2),
+    window.innerWidth - mw - 4,
+  );
+  menuEl.style.left = `${Math.round(x)}px`;
+  // Clamp to the window: a menu that renders past the top edge is silently cut off,
+  // because a transparent window clips rather than overflowing.
+  const top = Math.max(4, r.top - menuEl.offsetHeight - 8);
+  menuEl.style.top = `${Math.round(top)}px`;
+}
+
+document.addEventListener("pointerdown", (e) => {
+  if (!menuEl.contains(e.target as Node)) closeMenu();
+});
 
 /* --------------------------------------------------------- interaction */
 
-function indexOfNode(target: EventTarget | null): number | null {
+function itemFor(target: EventTarget | null): { item: DockItem; el: HTMLDivElement } | null {
   const el = (target as HTMLElement | null)?.closest(".item") as HTMLDivElement | null;
   if (!el) return null;
-  const i = items.findIndex((it) => it.id === el.dataset.id);
-  return i === -1 ? null : i;
+  const item = items.find((it) => it.id === el.dataset.id);
+  return item ? { item, el } : null;
 }
 
 itemsEl.addEventListener("pointermove", (e) => {
-  const i = indexOfNode(e.target);
-  applyMagnification(i);
-  if (i !== null) {
-    const el = nodes.get(items[i].id);
-    if (el) showTooltip(el, items[i].name);
-  } else {
-    hideTooltip();
-  }
+  const hit = itemFor(e.target);
+  applyMagnification(hit ? items.indexOf(hit.item) : null);
+  if (hit) showTooltip(hit.el, hit.item.name);
+  else hideTooltip();
 });
 
 itemsEl.addEventListener("pointerleave", () => {
@@ -262,92 +374,214 @@ itemsEl.addEventListener("pointerleave", () => {
   hideTooltip();
 });
 
+/**
+ * Left click. The Windows taskbar's rules, exactly:
+ *   - not running          -> launch
+ *   - one window, focused  -> minimise
+ *   - one window, else     -> activate
+ *   - several windows      -> show the chooser
+ */
+async function onClick(item: DockItem, el: HTMLDivElement): Promise<void> {
+  hideTooltip();
+
+  if (item.kind === "start") {
+    // PHASE 3 owns the launcher. Until then the Start button must still do
+    // something correct rather than nothing, so it opens the real Start menu.
+    await invoke("cmd_open_start_menu");
+    return;
+  }
+
+  if (item.windowCount === 0) {
+    if (item.parsingName) await invoke("cmd_dock_launch", { parsingName: item.parsingName });
+    return;
+  }
+
+  if (item.windowCount === 1) {
+    await invoke("cmd_dock_activate", { hwnd: item.hwnds[0] });
+    return;
+  }
+
+  const titles = await invoke<string[]>("cmd_window_titles", { hwnds: item.hwnds });
+  await openMenu(
+    el,
+    item.hwnds.map((h, i) => ({
+      label: titles[i] || item.name,
+      action: () => void invoke("cmd_dock_activate", { hwnd: h }),
+    })),
+  );
+}
+
+itemsEl.addEventListener("click", (e) => {
+  const hit = itemFor(e.target);
+  if (hit) void onClick(hit.item, hit.el);
+});
+
+/** Middle click opens a new instance, like the Windows taskbar. */
+itemsEl.addEventListener("auxclick", (e) => {
+  if (e.button !== 1) return;
+  const hit = itemFor(e.target);
+  if (hit?.item.parsingName) {
+    void invoke("cmd_dock_launch", { parsingName: hit.item.parsingName });
+  }
+});
+
+itemsEl.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  const hit = itemFor(e.target);
+  if (!hit) return;
+  const { item, el } = hit;
+  if (item.kind === "start") return;
+
+  const entries: MenuEntry[] = [];
+
+  if (item.parsingName) {
+    entries.push({
+      label: item.name,
+      action: () => void invoke("cmd_dock_launch", { parsingName: item.parsingName! }),
+    });
+  }
+
+  if (item.kind === "app") {
+    entries.push(
+      item.pinned
+        ? { label: "Unpin from dock", action: () => void invoke("cmd_dock_unpin", { id: item.id }).then(refresh) }
+        : {
+            label: "Pin to dock",
+            action: () =>
+              void invoke("cmd_dock_pin", {
+                name: item.name,
+                parsingName: item.parsingName,
+              }).then(refresh),
+            disabled: !item.parsingName,
+          },
+    );
+  }
+
+  if (item.windowCount > 0) {
+    entries.push({
+      label: item.windowCount > 1 ? `Close all ${item.windowCount} windows` : "Close window",
+      action: () => {
+        for (const h of item.hwnds) void invoke("cmd_dock_close_window", { hwnd: h });
+      },
+    });
+  }
+
+  if (entries.length) void openMenu(el, entries);
+});
+
+/* ----------------------------------------------------- drag to reorder */
+
+let dragId: string | null = null;
+
+itemsEl.addEventListener("dragstart", (e) => {
+  const hit = itemFor(e.target);
+  if (!hit || !hit.item.pinned) {
+    e.preventDefault();
+    return;
+  }
+  dragId = hit.item.id;
+  hit.el.classList.add("dragging");
+  e.dataTransfer?.setData("text/plain", hit.item.id);
+});
+
+itemsEl.addEventListener("dragover", (e) => {
+  if (!dragId) return;
+  e.preventDefault();
+  const hit = itemFor(e.target);
+  if (!hit || !hit.item.pinned || hit.item.id === dragId) return;
+
+  const from = items.findIndex((i) => i.id === dragId);
+  const to = items.findIndex((i) => i.id === hit.item.id);
+  if (from < 0 || to < 0) return;
+
+  const [moved] = items.splice(from, 1);
+  items.splice(to, 0, moved);
+  render();
+});
+
+itemsEl.addEventListener("dragend", () => {
+  if (!dragId) return;
+  nodes.get(dragId)?.classList.remove("dragging");
+  dragId = null;
+  void invoke("cmd_dock_set_pinned_order", {
+    ids: items.filter((i) => i.pinned).map((i) => i.id),
+  });
+});
+
 /* --------------------------------------------------------- auto-hide */
 
-let revealed = true;
+// Must match the `hidden` class in dock.html and the Rust sampler's initial state.
+let revealed = false;
 
 function setRevealed(next: boolean): void {
   if (next === revealed) return;
   revealed = next;
   sliderEl.classList.toggle("hidden", !next);
-  if (!next) hideTooltip();
+  if (!next) {
+    hideTooltip();
+    closeMenu();
+  }
 }
 
 /* ------------------------------------------------------------- startup */
 
-/** Mirror Windows' theme and animation settings onto <html>. */
-async function applySystemPreferences(): Promise<void> {
+function applyPrefs(p: SystemPrefs): void {
+  prefs = p;
+  const root = document.documentElement;
+  root.dataset.animations = p.animations ? "on" : "off";
+  root.dataset.iconShape = p.iconShape || "circle";
+  if (p.theme === "light" || p.theme === "dark") root.dataset.theme = p.theme;
+  else delete root.dataset.theme;
+  root.style.setProperty("--anim-scale", p.animations ? String(p.animationSpeed) : "0");
+}
+
+/** Only re-render when something actually changed, to keep idle CPU near zero. */
+let lastSignature = "";
+
+async function refresh(): Promise<void> {
   try {
-    const prefs = await invoke<{ animations: boolean; iconShape: string }>(
-      "cmd_system_prefs",
+    const next = await invoke<DockItem[]>("cmd_dock_items");
+    // Never reorder under the user's fingers mid-drag.
+    if (dragId) return;
+
+    const sig = JSON.stringify(
+      next.map((i) => [i.id, i.running, i.windowCount, i.attention, i.progressState, i.progress, i.name, !!i.icon]),
     );
-    document.documentElement.dataset.animations = prefs.animations ? "on" : "off";
-    document.documentElement.dataset.iconShape = prefs.iconShape;
-  } catch {
-    // A missing backend command must not leave the dock unstyled.
-    document.documentElement.dataset.animations = "on";
-    document.documentElement.dataset.iconShape = "circle";
+    if (sig === lastSignature) return;
+    lastSignature = sig;
+
+    items = next;
+    render();
+  } catch (err) {
+    console.error("dock refresh failed", err);
   }
 }
 
-/** Placeholder content, replaced by real taskbar data in the next step. */
-function placeholderItems(): DockItem[] {
-  const blank = (id: string, name: string, running: boolean, n = 1): DockItem => ({
-    id,
-    kind: "app",
-    name,
-    icon: null,
-    running,
-    windowCount: n,
-    attention: false,
-    progress: null,
-    progressState: "none",
-    pinned: true,
-  });
-  return [
-    {
-      id: "start",
-      kind: "start",
-      name: "Start",
-      icon: null,
-      running: false,
-      windowCount: 0,
-      attention: false,
-      progress: null,
-      progressState: "none",
-      pinned: true,
-    },
-    blank("a1", "File Explorer", true),
-    blank("a2", "Edge", true, 3),
-    blank("a3", "Terminal", false),
-    blank("a4", "Settings", false),
-    {
-      id: "recycle",
-      kind: "recycle",
-      name: "Recycle Bin",
-      icon: null,
-      running: false,
-      windowCount: 0,
-      attention: false,
-      progress: null,
-      progressState: "none",
-      pinned: true,
-    },
-  ];
-}
-
 async function main(): Promise<void> {
-  document.title = "macui dock [js-started]";
-  await applySystemPreferences();
+  try {
+    applyPrefs(await invoke<SystemPrefs>("cmd_system_prefs"));
+  } catch {
+    applyPrefs(prefs);
+  }
 
-  items = placeholderItems();
-  render();
+  await refresh();
 
-  await listen("dock:reveal", () => setRevealed(true));
-  await listen("dock:conceal", () => setRevealed(false));
+  try {
+    await listen("dock:reveal", () => setRevealed(true));
+    await listen("dock:conceal", () => setRevealed(false));
+  } catch (e) {
+    // Without these the dock can never auto-hide, so make the failure loud in the
+    // log rather than leaving a permanently visible dock and no explanation.
+    await invoke("cmd_log", { msg: `listen() FAILED, auto-hide disabled: ${e}` });
+  }
+  await listen("dock:prefs", async () => {
+    applyPrefs(await invoke<SystemPrefs>("cmd_system_prefs"));
+  });
 
+  window.setInterval(() => void refresh(), REFRESH_MS);
   await getCurrentWindow().show();
-  document.title = "macui dock [ok items=" + items.length + " w=" + lastSize.w + " h=" + lastSize.h + "]";
+  // Re-enable transitions only after the concealed start state has been painted.
+  requestAnimationFrame(() => sliderEl.classList.remove("no-anim"));
 }
 
 void main();
