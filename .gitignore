@@ -1,0 +1,9 @@
+# build output - large, and this folder is OneDrive-synced
+target/
+node_modules/
+dist/
+screenshots/
+*.log
+
+# toolchain archives (installed to %LOCALAPPDATA%, see SYSTEM_CHANGES.md)
+tools/
