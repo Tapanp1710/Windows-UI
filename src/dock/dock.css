@@ -1,0 +1,268 @@
+/*
+ * Dock — the visual replacement for the Windows taskbar.
+ *
+ * Layout contract with the Rust side: the window is sized to exactly the dock's
+ * bounding box plus SHADOW_PAD on every side (the shadow must have room to draw, and
+ * a transparent window clips anything outside its rect). The dock itself is centred
+ * inside that padding, so the visible island sits --edge-margin above the screen edge.
+ */
+
+.slider {
+  /* SHADOW_PAD in dock.ts must match this. */
+  padding: 18px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  width: 100%;
+  height: 100%;
+
+  transform: translateY(0);
+  transition: transform var(--t-slow) var(--ease-out);
+  will-change: transform;
+}
+
+/* Parked below the screen edge while auto-hidden. 100% of the slider's own height
+   is always enough to clear the dock plus its shadow. */
+.slider.hidden {
+  transform: translateY(100%);
+}
+
+.dock {
+  display: flex;
+  align-items: center;
+  padding: var(--dock-pad);
+  /* 16px radius from the design tokens, via .glass */
+}
+
+.items {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--dock-gap);
+}
+
+/* --- a single dock entry ------------------------------------------------- */
+
+.item {
+  position: relative;
+  width: var(--dock-icon);
+  height: var(--dock-icon);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  transform-origin: bottom center;
+  transition:
+    transform var(--t-base) var(--ease-out),
+    filter var(--t-base) var(--ease-out);
+  will-change: transform;
+}
+
+/* Magnification. The hovered icon grows 1.15x and lifts 4px; its immediate
+   neighbours grow less, which is what makes the row read as a single soft curve
+   rather than one icon popping. Set from dock.ts via --mag / --lift. */
+.item {
+  transform: scale(var(--mag, 1)) translateY(calc(-1 * var(--lift, 0px)));
+}
+
+/* The soft white glass plate every real app icon sits on. */
+.plate {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--plate-bg);
+  border: 1px solid var(--plate-border);
+  box-shadow: 0 1px 2px rgba(60, 40, 25, 0.12);
+  overflow: hidden;
+}
+
+/* Icon shape is a global setting: circle | squircle | rounded. Applied here once so
+   the dock, launcher, switcher and widgets all pick it up from the same place. */
+:root[data-icon-shape="circle"] .plate {
+  border-radius: 50%;
+}
+:root[data-icon-shape="rounded"] .plate {
+  border-radius: var(--radius-icon);
+}
+:root[data-icon-shape="squircle"] .plate {
+  /* A superellipse is not expressible in CSS; a 30% radius is the closest read at
+     these sizes and is what most "squircle" implementations actually ship. */
+  border-radius: 30%;
+}
+
+.plate img {
+  width: 76%;
+  height: 76%;
+  object-fit: contain;
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
+/* Running indicator: a small dot under the icon, as on the Windows taskbar. */
+.dot {
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--running-dot);
+  opacity: 0;
+  transform: scale(0.4);
+  transition:
+    opacity var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+}
+
+.item.running .dot {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Several windows of the same app: a slightly wider pill, like Windows' grouped
+   taskbar button. */
+.item.grouped .dot {
+  width: 12px;
+  margin-left: -6px;
+  border-radius: 2px;
+}
+
+/* --- divider before the Recycle Bin -------------------------------------- */
+
+.divider {
+  width: 1px;
+  height: calc(var(--dock-icon) * 0.62);
+  margin: 0 2px;
+  background: var(--divider);
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+/* --- attention state ------------------------------------------------------
+ * Windows flashes a taskbar button orange when an app wants attention. The brief
+ * asks for a gentle bounce or glow instead of a flash.
+ */
+
+@keyframes attention {
+  0%,
+  100% {
+    transform: scale(var(--mag, 1)) translateY(calc(-1 * var(--lift, 0px)));
+  }
+  50% {
+    transform: scale(calc(var(--mag, 1) * 1.06))
+      translateY(calc(-1 * var(--lift, 0px) - 3px));
+  }
+}
+
+.item.attention .plate {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 0 14px 2px rgba(232, 130, 62, 0.55);
+}
+
+.item.attention {
+  animation: attention 1.4s var(--ease-out) infinite;
+}
+
+:root[data-animations="off"] .item.attention {
+  animation: none;
+}
+
+/* --- progress bar under an icon (downloads etc.) -------------------------- */
+
+.progress {
+  position: absolute;
+  left: 10%;
+  bottom: -5px;
+  width: 80%;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(120, 95, 70, 0.22);
+  overflow: hidden;
+  display: none;
+}
+
+.item.has-progress .progress {
+  display: block;
+}
+
+/* Hide the running dot when a progress bar occupies the same strip. */
+.item.has-progress .dot {
+  opacity: 0;
+}
+
+.progress > i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width var(--t-base) var(--ease-out);
+}
+
+.item.progress-indeterminate .progress > i {
+  width: 40%;
+  animation: indeterminate 1.1s var(--ease-out) infinite;
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+.item.progress-error .progress > i {
+  background: #d9534f;
+}
+.item.progress-paused .progress > i {
+  background: #c9a227;
+}
+
+/* --- tooltip -------------------------------------------------------------- */
+
+.tooltip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  padding: 5px 10px;
+  font-size: var(--fs-small);
+  line-height: 1.35;
+  color: var(--text);
+  background: var(--tooltip-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(60, 40, 25, 0.18);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+}
+
+.tooltip.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* --- Start button --------------------------------------------------------- */
+
+.item.start .plate {
+  background: linear-gradient(145deg, #ffc06e 0%, #e8823e 100%);
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+.item.start svg {
+  width: 56%;
+  height: 56%;
+  display: block;
+}
