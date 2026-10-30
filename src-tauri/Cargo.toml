@@ -20,6 +20,9 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["tray-icon", "image-ico", "devtools"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# PNG encoding for the icons we pull out of the shell as raw BGRA bitmaps.
+image = { version = "0.25", default-features = false, features = ["png"] }
+base64 = "0.22"
 
 [dependencies.windows]
 version = "0.58"
@@ -34,6 +37,10 @@ features = [
   "Win32_System_Com",
   "Win32_Graphics_Gdi",
   "Win32_Storage_FileSystem",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_LibraryLoader",
+  "Win32_UI_Controls",
+  "Win32_Security",
 ]
 
 [profile.release]

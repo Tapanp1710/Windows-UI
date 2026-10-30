@@ -123,6 +123,12 @@ html,
 body {
   margin: 0;
   padding: 0;
+  /* Must fill the window. Without an explicit height a percentage height on a
+     child resolves to auto, so panels anchored with flex-end (the dock) drift away
+     from the window edge the moment the window is resized to make room for a
+     tooltip or menu. */
+  width: 100%;
+  height: 100%;
   /* Every window in this app is transparent; the page paints only its island. */
   background: transparent;
   font-family: var(--font);
