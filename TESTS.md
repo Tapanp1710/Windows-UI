@@ -157,7 +157,75 @@ numbers all still work untouched.
 N/A — not started. Will verify Alt+Tab, Alt+Shift+Tab, Esc, Win+Tab, virtual desktops.
 
 ## PHASE 5 — Desktop widgets
-N/A — not started.
+
+Run against the release build on 2026-10-31, by driving a real pointer and reading the
+screenshots back. The media tests use a local fixture page that publishes a real
+Windows media session, so the widget was exercised against the genuine API rather than
+a mock.
+
+### Placement and desktop behaviour
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 5.1 | All five widgets render | PASS | clock, calendar, weather, music, system stats |
+| 5.2 | Default layout matches the brief | PASS | clock top left, calendar top right, the rest arranged without overlapping; computed from the viewport, so it is correct at any resolution |
+| 5.3 | Widgets sit **behind** normal windows | PASS | invisible under a maximised editor, which is the point |
+| 5.4 | Widgets survive Show Desktop (Win+D) | PASS | they stay on the desktop as part of it, as the brief requires |
+| 5.5 | Clicks **between** widgets reach the desktop | PASS | right-clicking an empty spot gave the Windows desktop menu. The window is clipped to the cards with `SetWindowRgn` |
+| 5.6 | Desktop icons still work around them | PASS | same mechanism |
+| 5.7 | Widget layer never takes focus | PASS | failed first: WebView2 focuses its own child and activated the window despite `WS_EX_NOACTIVATE`. Focus is now handed straight back (D-021) |
+| 5.8 | Z-order survives other windows being activated | PASS | re-asserted ~1/s above `Progman`; `alwaysOnBottom` would have put it *below* the wallpaper (D-019) |
+
+### Dragging and persistence
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 5.9 | Drag a widget anywhere | PASS | verified by dragging the weather card to mid-screen |
+| 5.10 | Position persists | PASS | written to `settings.json` on release, not on every pixel |
+| 5.11 | Drag does not die mid-screen | PASS | the clickable region becomes the whole window for the duration of a drag, then goes back to the cards |
+| 5.12 | A plain click does not nudge a widget | PASS | 4px threshold; this was a real bug found by my own stray test clicks moving the layout |
+| 5.13 | Widgets stay on screen | PASS | clamped to the viewport after layout |
+
+### Content
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 5.14 | Clock shows the user's own time format | PASS | ticks on the minute boundary, not on a 1s timer |
+| 5.15 | Calendar shows the month with today marked | PASS | October 2026, 31 highlighted; weekday names come from the locale |
+| 5.16 | Weather is live | PASS | Open-Meteo, no API key: "30°, Clear, Bengaluru" |
+| 5.17 | Weather city is configurable | PASS | typed Hyderabad → "31°, Drizzle, Hyderabad" within seconds, then back to Bengaluru |
+| 5.18 | Weather failure is handled | PASS | shows "Weather unavailable" and logs it, rather than an empty card |
+| 5.19 | System stats are live | PASS | CPU from `GetSystemTimes` deltas, RAM from `GlobalMemoryStatusEx`, battery from the existing power query |
+| 5.20 | Media widget resting state | PASS | "Nothing playing" with a play icon when Windows has no session — independently confirmed there was genuinely no session, through a separate WinRT query |
+
+### Media controls, against a real Windows media session
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 5.21 | Title and artist appear | PASS | "Widget Test Track" / "macui Test · MSEdge" |
+| 5.22 | Play/pause works | PASS | failed first: `TryTogglePlayPauseAsync` returns false on sessions that expose Play and Pause but not the toggle. Now asks for the specific transition |
+| 5.23 | Next track works | PASS | the fixture page received `nexttrack` |
+| 5.24 | Previous track works | PASS | the fixture page received `previoustrack` |
+| 5.25 | Play/pause icon follows the real state | PASS | pause glyph while playing, play glyph while paused |
+| 5.26 | VLC playing without a media session | PASS (by design) | VLC published no session; the widget correctly said nothing was playing rather than inventing something |
+
+### Settings
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 5.27 | Master switch for widgets | PASS | the whole layer is created and destroyed, so switching it off gives the memory back |
+| 5.28 | Per-widget switches | PASS | clock switched off and back on, live, with the clickable region following |
+| 5.29 | Settings survive a restart | PASS | |
+
+### Resources (idle, 30 s, dock + top bar + widgets, settings closed)
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 5.30 | Private bytes, whole tree | **PASS** | **213.9 MB** against the 250 MB target |
+| 5.31 | Idle CPU | PASS | 0.195% across 8 cores |
+| 5.32 | Cost of the widget layer | noted | it first took idle memory to 258 MB — over target. Sharing one renderer across all panels brought the whole app to 213.9 MB and 10 processes down to 8 (D-020) |
+
+### Windows behaviour
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 5.33 | No keyboard hook added | PASS | this phase installs none |
+| 5.34 | The Windows taskbar stays hidden | PASS | **found a real bug**: opening the shell's "Open with" dialog brought the taskbar back, and it stayed. Hiding it once at startup was not enough; it is now re-asserted, except while the tray overflow is deliberately showing it |
+| 5.35 | Taskbar returns on a hard kill, widgets running | PASS | watchdog unaffected by the extra window |
+| 5.36 | Unit tests | PASS | 3 passed, including the media source-name parser |
 
 ## PHASE 6 — Settings, startup, packaging
 

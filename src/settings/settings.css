@@ -244,6 +244,25 @@ code {
   outline-offset: 2px;
 }
 
+/* --- text field ---------------------------------------------------------- */
+
+input.text {
+  width: 140px;
+  appearance: none;
+  border: 1px solid var(--plate-border);
+  border-radius: 8px;
+  background: var(--plate-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-small);
+  padding: 5px 8px;
+}
+
+input.text:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* --- slider -------------------------------------------------------------- */
 
 .slide {

@@ -17,6 +17,7 @@ export default defineConfig({
         dock: resolve(__dirname, "src/dock.html"),
         topbar: resolve(__dirname, "src/topbar.html"),
         settings: resolve(__dirname, "src/settings.html"),
+        widgets: resolve(__dirname, "src/widgets.html"),
       },
     },
   },

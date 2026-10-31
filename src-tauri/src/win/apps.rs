@@ -249,3 +249,19 @@ pub fn is_responsive(hwnd_raw: isize) -> bool {
         .0 != 0
     }
 }
+
+/// Whether a window belongs to this process.
+///
+/// Used to decide what counts as "the window the user was working in": our own
+/// panels never do.
+pub fn is_our_window(hwnd_raw: isize) -> bool {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::System::Threading::GetCurrentProcessId;
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+
+    unsafe {
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(HWND(hwnd_raw as *mut _), Some(&mut pid));
+        pid == GetCurrentProcessId()
+    }
+}

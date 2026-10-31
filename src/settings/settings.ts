@@ -13,7 +13,21 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import "../shared/theme.css";
 import "./settings.css";
 
+type WidgetId = "clock" | "calendar" | "weather" | "media" | "stats";
+const WIDGET_IDS: WidgetId[] = ["clock", "calendar", "weather", "media", "stats"];
+
+interface WidgetState {
+  on: boolean;
+  x: number;
+  y: number;
+}
+
 interface Settings {
+  widgetsEnabled: boolean;
+  widgets: Partial<Record<WidgetId, WidgetState>>;
+  weatherCity: string;
+  weatherLat: number;
+  weatherLon: number;
   dockEnabled: boolean;
   topbarEnabled: boolean;
   topbarAutoHide: boolean;
@@ -119,6 +133,59 @@ function slider(
 
 /* ------------------------------------------------------------- sections */
 
+/**
+ * The per-widget switches.
+ *
+ * They patch the whole `widgets` map rather than one key, because that is the shape
+ * Rust stores. The widget layer writes its computed layout back on first run, so the
+ * positions in that map are always real ones - this never has to invent coordinates.
+ */
+function wireWidgets(): void {
+  toggle("widgetsEnabled", "widgetsEnabled");
+
+  for (const id of WIDGET_IDS) {
+    const box = $<HTMLInputElement>(`wg-${id}`);
+    box.checked = config.settings.widgets?.[id]?.on ?? true;
+    box.addEventListener("change", () => {
+      const map = { ...(config.settings.widgets || {}) };
+      map[id] = { x: 0, y: 0, ...(map[id] || {}), on: box.checked };
+      config.settings.widgets = map;
+      void patch("widgets", map);
+    });
+  }
+
+  const city = $<HTMLInputElement>("weatherCity");
+  const note = $<HTMLParagraphElement>("weatherNote");
+  city.value = config.settings.weatherCity;
+
+  city.addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter") return;
+    const query = city.value.trim();
+    if (!query) return;
+    note.textContent = `Looking up ${query}…`;
+    try {
+      // Open-Meteo's geocoding endpoint: no account, no key, CORS open.
+      const r = await fetch(
+        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1`,
+      );
+      const hit = (await r.json())?.results?.[0];
+      if (!hit) {
+        note.textContent = `No place called "${query}". Try adding the country.`;
+        return;
+      }
+      const name = [hit.name, hit.admin1, hit.country].filter(Boolean).join(", ");
+      city.value = hit.name;
+      await invoke("cmd_patch_settings", {
+        patch: { weatherCity: hit.name, weatherLat: hit.latitude, weatherLon: hit.longitude },
+      });
+      config.settings.weatherCity = hit.name;
+      note.textContent = `Weather now shows ${name}.`;
+    } catch (err) {
+      note.textContent = `Could not look that up (${err}). Check your connection.`;
+    }
+  });
+}
+
 function wireWallpaper(): void {
   const restore = $<HTMLButtonElement>("paperRestore");
   restore.disabled = !config.wallpaperChanged;
@@ -192,6 +259,7 @@ async function main(): Promise<void> {
   slider("dockIconSize", "dockIconSize", (n) => `${n} px`);
   slider("animationSpeed", "animationSpeed", (n) => (n === 0 ? "off" : `${n}×`));
 
+  wireWidgets();
   wireWallpaper();
   wireStartup();
   wireLeaving();

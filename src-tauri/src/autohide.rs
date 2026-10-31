@@ -113,6 +113,41 @@ pub fn start(app: AppHandle) -> Arc<AtomicBool> {
             // the work area, and a silently-written reservation has no notification
             // to hook, so it is checked here rather than trusted once.
             ticks = ticks.wrapping_add(1);
+
+            // Remember what the user was working in, for the widget layer to hand
+            // focus back to. Sampled here rather than hooked, for the same reason
+            // the cursor is: a shell hook would sit in everyone's input path.
+            if let Some(h) = crate::win::apps::foreground_window() {
+                let raw = h.0 as isize;
+                if !crate::win::apps::is_our_window(raw) {
+                    crate::LAST_FOREIGN_FOREGROUND.store(raw, Ordering::SeqCst);
+                }
+            }
+
+            // Keep the widget layer parked just above the desktop. The shell re-sorts
+            // the z-order whenever a window is activated or Win+D is pressed, and
+            // there is no notification to hook, so it is re-asserted on the sampler
+            // that is already running rather than on a thread of its own.
+            if ticks % 20 == 0 {
+                let hwnd = crate::WIDGETS_HWND.load(Ordering::SeqCst);
+                if hwnd != 0 {
+                    crate::win::place_above_desktop(hwnd);
+                }
+            }
+
+            // The Windows taskbar can come back without us doing anything: opening
+            // the shell's "Open with" dialog did exactly that during PHASE 5 testing,
+            // leaving a visible taskbar sitting under our dock. Hiding it once at
+            // startup is not enough, so it is re-asserted here - except while the
+            // tray overflow is deliberately showing it.
+            if ticks % 20 == 10
+                && !crate::TASKBAR_SHOW_ALLOWED.load(Ordering::SeqCst)
+                && crate::win::taskbar::is_taskbar_visible()
+            {
+                crate::logln!("the Windows taskbar reappeared; hiding it again");
+                crate::win::taskbar::hide_taskbar();
+            }
+
             if ticks % 40 == 0 {
                 let want = crate::RESERVED_TOP.load(Ordering::SeqCst);
                 if want > 0 && crate::win::taskbar::work_area().top != want {

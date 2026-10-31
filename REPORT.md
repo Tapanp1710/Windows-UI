@@ -2,14 +2,15 @@
 
 Written for: you, the laptop's owner, on waking up.
 
-**Short version:** STEP 0, PHASE 1 (dock), PHASE 2 (top bar) and **PHASE 6 (settings
-window, tray menu, startup entry, wallpaper, NSIS installer)** are built, tested and
-committed. PHASES 5, 4 and 3 (widgets, window switcher, launcher) are **not built**.
-Everything that is built has been verified by running it and reading screenshots back,
-not assumed. Your Windows taskbar always comes back.
+**Short version:** STEP 0, PHASE 1 (dock), PHASE 2 (top bar), PHASE 6 (settings
+window, tray menu, startup entry, wallpaper, NSIS installer) and **PHASE 5 (desktop
+widgets)** are built, tested and committed. PHASE 4 (window switcher) and PHASE 3
+(launcher) are **not built**. Everything that is built has been verified by running it
+and reading screenshots back, not assumed. Your Windows taskbar always comes back.
 
-**Memory is now inside target**: 200.4 MB private bytes across the whole process tree,
-against the revised 250 MB. **Animation smoothness still needs your eye** — see §3.
+**Memory is inside target**: 213.9 MB private bytes across the whole process tree,
+against the revised 250 MB — with the widgets running. **Animation smoothness still
+needs your eye** — see §3.
 
 ---
 
@@ -77,6 +78,31 @@ runs fine; **App Control for Business does not block it**.
   nothing in the folder but this app's own log. You do not have to use it — the loose
   `.exe` still runs as it stands.
 
+### PHASE 5 — Desktop widgets
+Five glass widgets that live **on** the desktop rather than over it:
+
+- **Clock** — large time and date, in your own Windows formats.
+- **Calendar** — the current month with today marked.
+- **Weather** — live from **Open-Meteo**, which needs no account and no API key.
+  Defaults to **Bengaluru** (nothing on this machine identifies a city, so I had to
+  pick one and tell you — D-017). Type any city in settings and press Enter.
+- **Music controls** — title, artist, play/pause, next, previous, driven by **Windows'
+  own media session**: the same source the volume flyout and the lock screen read, so
+  it works with any player that registers one, with no per-app integration.
+- **System stats** — CPU, RAM and battery.
+
+What makes them behave like desktop widgets rather than a floating panel:
+
+- They sit **behind every window**, and **survive Win+D**.
+- **Clicks between them go straight through to the desktop.** The window is clipped to
+  the cards themselves, so your icons, right-click menu and drag-select are untouched.
+  Verified by right-clicking between two widgets and getting the Windows menu.
+- **Clicking one hands focus straight back** to whatever you were working in, so
+  skipping a track does not take the caret out of what you are typing.
+- Drag any of them anywhere; the layout is saved. A plain click will not nudge them.
+- Each has its own switch, plus a master switch that destroys the layer and gives the
+  memory back.
+
 ### Safety — the part that matters most
 - The taskbar is restored on a clean exit.
 - A **watchdog process** restores it if the app is hard-killed. Verified repeatedly:
@@ -97,6 +123,7 @@ runs fine; **App Control for Business does not block it**.
 | **Jump lists** | Reading another app's jump list means parsing undocumented files with no supported API. The menu offers launch / pin / unpin / close instead. (D-005) |
 | **Progress & attention indicators** | Receiving these means *being* the registered shell taskbar, not drawing one. The visuals are implemented and correct, but nothing can feed them from a normal app. (D-006) |
 | **Pin order** | Windows stores taskbar pin order in an undocumented registry blob. Pins import alphabetically; drag to reorder and it sticks. (D-004) |
+| **Weather forecast** | The widget shows current conditions. A forecast is a different thing from what the brief asked for, and Open-Meteo would happily provide it later. |
 | **System Acrylic blur** | `backdrop-filter` cannot blur the desktop through a transparent window, and real Acrylic fills a rectangle — which would square off every rounded pill and kill the shadow. Took the brief's documented fallback: more opaque surfaces. (D-009) |
 | **Tray icon** | It exists, with Settings / Restart UI / Return to normal Windows / Quit — but the notification area lives *inside* the taskbar we hide, so it cannot be clicked while the UI layer is running. Making it reachable would mean becoming the registered shell taskbar, the same wall as progress indicators. The identical menu is one right-click away on the dock background or on any top-bar pill. (D-016) |
 | **Top bar auto-hide** | The switch exists and correctly gives the reserved strip back, but the bar does not yet slide away on a timer. It is honest as "reserve screen space: yes/no" until PHASE 5. |
@@ -120,13 +147,15 @@ runs fine; **App Control for Business does not block it**.
    a code editor's text show through its own words. (D-014)
 
 ### Known limitations
-- **Memory is inside the revised target but not small.** 200.4 MB private bytes idle.
-  Roughly 250 MB of working set is WebView2's fixed cost (browser, GPU and utility
-  processes) before any of my code runs, and each live window adds a renderer. The one
-  change that would cut it meaningfully is to **merge every panel into a single
-  screen-sized window** and use the hit-test-region trick already working in the top
-  bar — one renderer instead of N, about 60 MB of working set saved per panel removed.
-  You asked me not to do that now; it is recorded here as the option it is.
+- **Memory is inside the revised target but not small.** 213.9 MB private bytes idle,
+  with the widgets running. Most of that is WebView2's fixed cost before any of my
+  code runs. Adding the widget layer first took it to 258 MB — over target — and the
+  fix was to make every panel share **one** renderer process instead of one each
+  (D-020), which brought the whole app to 213.9 MB. The trade-off is stated there: a
+  renderer crash now takes every panel with it rather than one. The watchdog still
+  restores your taskbar either way.
+  The remaining option, which you asked me to park, is merging the panels into a
+  single window — that would save the per-window surface memory as well.
 - **Multi-monitor is untested** — this laptop has one display.
 - Two settings (dock "always visible" and icon size) had been written to disk since
   PHASE 1 and were never read by anything until this phase. They work now. I mention it
@@ -236,16 +265,19 @@ blank window. That cost a long detour; the script handles it.
 
 ## 6. Resource usage (idle, measured)
 
-Measured over 30 s, both bars running, settings window closed.
+Measured over 30 s: dock, top bar and all five widgets running, settings closed.
 
 | Metric | Value | Target | Verdict |
 |---|---|---|---|
-| Idle CPU | **0.104%** across 9 processes (8 cores) | near-0% | **met** |
-| Private bytes | **200.4 MB** | under 250 MB | **met** |
-| Working set | **453.7 MB** | — | inflated by Chromium's shared pages |
-| Our own processes | 2 (dock/top-bar host + watchdog) | — | |
-| WebView2 processes | 7, the rest | — | fixed cost of the stack |
-| With the settings window open | 210.6 MB private | — | returns to 200.4 MB on close |
+| Idle CPU | **0.195%** across 8 processes (8 cores) | near-0% | **met** |
+| Private bytes | **213.9 MB** | under 250 MB | **met** |
+| Processes | 8 (2 ours + 6 WebView2) | — | was 10 before the panels shared a renderer |
+| Without the widgets | ~200 MB | — | the master switch destroys the layer |
+| Before sharing a renderer | 258.3 MB | — | over target; see D-020 |
+
+CPU is genuinely idle: the cursor is sampled ~20×/s for the dock's edge trigger, the
+dock refreshes once a second, the top bar every two, the widgets every two, and the
+media session four times a second. **No hooks are installed anywhere in the system.**
 
 CPU is genuinely idle: auto-hide samples the cursor ~20×/s, the dock refreshes once a
 second, and the top bar every two seconds. No hooks are installed anywhere in the system.
@@ -254,8 +286,8 @@ second, and the top bar every two seconds. No hooks are installed anywhere in th
 
 ## 7. What is next
 
-The agreed build order from here is **PHASE 5 (widgets) → PHASE 4 (window switcher) →
-PHASE 3 (launcher)**, which is what I will work through. The launcher is last by design:
+The agreed build order from here is **PHASE 4 (window switcher) → PHASE 3 (launcher)**,
+which is what I will work through. The launcher is last by design:
 capturing the Win key without breaking Win+E, Win+R, Win+L and the rest is the riskiest
 thing in the brief, and PHASE 4 builds the DWM thumbnail code that both it and the
 dock's window chooser want.

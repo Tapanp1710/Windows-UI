@@ -63,6 +63,12 @@ The Start button sends **Ctrl+Esc**, and the top bar sends **Win+A** / **Win+N**
 install a hook, intercept a key, or remap anything. Every Windows shortcut continues to
 work exactly as before.
 
+### A note on the widget layer (PHASE 5)
+The desktop widgets are an ordinary window of ours, parked in the z-order just above
+the desktop. **Nothing about the desktop itself is modified**: no `SetParent` into
+`Progman`, no wallpaper hook, no shell extension. It is removed by the app exiting,
+like every other window.
+
 ### Known gap
 Killing the **entire process tree** at once (e.g. "End process tree" in Task Manager)
 kills the watchdog along with the app, so U-1..U-3 stay in effect until you run
