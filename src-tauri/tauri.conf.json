@@ -77,6 +77,26 @@
         "minimizable": false,
         "closable": false,
         "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --process-per-site --renderer-process-limit=1"
+      },
+      {
+        "label": "launcher",
+        "url": "launcher.html",
+        "title": "macui launcher",
+        "width": 920,
+        "height": 620,
+        "center": true,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": true,
+        "focus": false,
+        "visible": false,
+        "maximizable": false,
+        "minimizable": false,
+        "closable": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --process-per-site --renderer-process-limit=1"
       }
     ]
   },

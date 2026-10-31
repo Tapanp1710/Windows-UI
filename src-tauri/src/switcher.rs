@@ -52,6 +52,10 @@ pub fn start(app: AppHandle) {
                 win::hotkeys::Key::Switch(backwards) => advance(&app, backwards),
                 win::hotkeys::Key::Commit => commit(&app),
                 win::hotkeys::Key::Cancel => cancel(&app),
+                // The launcher shares this hook and therefore this thread; both are
+                // just "show a window", so there is nothing to gain from a second.
+                win::hotkeys::Key::Launcher => crate::launcher::toggle(&app),
+                win::hotkeys::Key::CloseLauncher => crate::launcher::close(&app),
             }
         }
     });

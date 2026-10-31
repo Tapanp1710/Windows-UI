@@ -11,9 +11,14 @@
    edge, exactly as the dock does at the bottom. The WINDOW never moves - moving a
    Win32 window every frame is where this kind of jank comes from - only this
    transform, and the hit-test region is emptied while it is away so the strip
-   behaves like bare screen. */
+   behaves like bare screen.
+
+   Coming back is deliberately quicker than going away. Arriving should feel like
+   the bar was already there; leaving should feel unhurried. The transition on
+   `.bar` governs the way in, the one here governs the way out. */
 .bar.hidden {
   transform: translateY(calc(-100% - var(--shadow-reach)));
+  transition: transform var(--t-slow) var(--ease-out);
 }
 
 .bar.no-anim {
@@ -25,7 +30,7 @@
   width: 100%;
   height: 100%;
   transform: translateY(0);
-  transition: transform var(--t-slow) var(--ease-out);
+  transition: transform var(--t-fast) cubic-bezier(0.17, 0.84, 0.44, 1);
   will-change: transform;
   padding: 6px var(--edge-margin) 0;
   display: flex;
@@ -177,18 +182,39 @@ button.pill,
   margin-left: 2px;
 }
 
+
+/* --- clock, which now lives on the status pill ---------------------------- */
+
+.clock {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.1px;
+}
+
+.pill-sep {
+  width: 1px;
+  height: 14px;
+  margin: 0 3px;
+  background: var(--divider);
+  border-radius: 1px;
+}
+
 /* ===========================================================================
  * The island
  *
- * The centre pill, which grows. Collapsed it is the clock; hovering expands it to
- * what is playing; a volume change, the charger going in or out, or a track change
- * expands it for a moment on its own.
+ * A pill that grows. Collapsed it says what is going on: the album art of what is
+ * playing, or how many things are parked on the shelf. Hovering it, or dragging a
+ * file near it, expands it to the transport controls and the shelf itself.
  *
- * Everything animates on `transform` and `opacity` and on a `max-height` that is
- * only ever a few hundred pixels - no window is resized, and nothing is laid out
- * per frame. The top bar window is already tall enough to hold the expanded body
- * (TOPBAR_WINDOW_CSS_HEIGHT), so there is no window dance either.
+ * Everything animates on transform, opacity and a bounded max-height. No window is
+ * resized and nothing is laid out per frame - the top bar window is already tall
+ * enough to hold the expanded body, so growing is a CSS transition and nothing more.
+ * The easing overshoots very slightly on the way open and settles plainly on the way
+ * closed, which is what makes it read as one object rather than a panel appearing.
  * =========================================================================== */
+
+:root {
+  --ease-island: cubic-bezier(0.22, 1.12, 0.36, 1);
+}
 
 .island {
   position: absolute;
@@ -197,107 +223,184 @@ button.pill,
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
 }
 
-/* The collapsed pill grows a little when something is going on, which is the cue
-   that there is more to see. */
 .island-pill {
+  gap: 7px;
+  min-width: 96px;
+  justify-content: center;
   transition:
-    transform var(--t-base) var(--ease-out),
-    padding var(--t-base) var(--ease-out);
+    transform var(--t-base) var(--ease-island),
+    min-width var(--t-base) var(--ease-island);
 }
 
 .island[data-state="open"] .island-pill,
-.island[data-state="activity"] .island-pill {
-  transform: scale(1.04);
+.island[data-state="drop"] .island-pill {
+  transform: scale(1.05);
 }
 
-/* Little lead/trail slots either side of the clock: the album art while something
-   plays, and a live glyph while an activity is showing. */
-.island-lead,
-.island-trail {
+.island[data-state="drop"] .island-pill {
+  box-shadow:
+    var(--glass-shadow),
+    0 0 0 2px var(--accent);
+}
+
+/* Album art, shown small in the collapsed pill while something is playing. */
+.island-lead {
   display: flex;
   align-items: center;
-  justify-content: center;
   width: 0;
-  height: 16px;
+  height: 18px;
   overflow: hidden;
   opacity: 0;
   transition:
-    width var(--t-base) var(--ease-out),
+    width var(--t-base) var(--ease-island),
     opacity var(--t-base) var(--ease-out);
 }
 
-.island-lead.on,
-.island-trail.on {
-  width: 16px;
+.island-lead.on {
+  width: 18px;
   opacity: 1;
 }
 
 .island-lead img {
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
   object-fit: cover;
 }
 
-.island-trail svg {
-  width: 14px;
-  height: 14px;
-  display: block;
+/* Three bars that move while audio plays. Pure CSS: no timer, nothing driven from
+   script, and it stops dead the moment nothing is playing. */
+.island-eq {
+  display: none;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.island-eq.on {
+  display: flex;
+}
+
+.island-eq i {
+  width: 2.5px;
+  border-radius: 1.5px;
+  background: var(--accent);
+  animation: eq 900ms var(--ease-out) infinite alternate;
+}
+
+.island-eq i:nth-child(1) {
+  height: 5px;
+  animation-delay: 0ms;
+}
+
+.island-eq i:nth-child(2) {
+  height: 11px;
+  animation-delay: 160ms;
+}
+
+.island-eq i:nth-child(3) {
+  height: 7px;
+  animation-delay: 320ms;
+}
+
+@keyframes eq {
+  to {
+    height: 3px;
+  }
+}
+
+/* Animations off system-wide has to mean genuinely still, not slower. */
+:root[data-animations="off"] .island-eq i {
+  animation: none;
+}
+
+.island-label {
+  font-size: var(--fs-bar);
+  white-space: nowrap;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.island-badge {
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.island-badge[hidden] {
+  display: none;
 }
 
 /* --- the expanded body ---------------------------------------------------- */
 
 .island-body {
-  width: 304px;
-  padding: 0 12px;
+  width: 330px;
+  padding: 0 13px;
   max-height: 0;
   overflow: hidden;
   opacity: 0;
-  transform: translateY(-8px) scale(0.97);
+  transform: translateY(-10px) scale(0.96);
   transform-origin: top center;
   pointer-events: none;
   transition:
-    max-height var(--t-slow) var(--ease-out),
-    opacity var(--t-base) var(--ease-out),
-    transform var(--t-slow) var(--ease-out),
-    padding var(--t-slow) var(--ease-out);
+    max-height var(--t-slow) var(--ease-island),
+    opacity var(--t-fast) var(--ease-out),
+    transform var(--t-slow) var(--ease-island),
+    padding var(--t-slow) var(--ease-island);
 }
 
 .island[data-state="open"] .island-body,
+.island[data-state="drop"] .island-body,
 .island[data-state="activity"] .island-body {
-  max-height: 120px;
-  padding: 12px;
+  max-height: 232px;
+  padding: 13px;
   opacity: 1;
   transform: translateY(0) scale(1);
   pointer-events: auto;
 }
 
-/* An activity is a one-line thing; now playing is the taller layout. */
+/* An activity is one line; it should not open the whole panel. */
 .island[data-state="activity"] .island-body {
-  max-height: 64px;
+  max-height: 62px;
 }
+
+.island[data-state="activity"] .np,
+.island[data-state="activity"] .shelf {
+  display: none;
+}
+
+/* --- now playing ---------------------------------------------------------- */
 
 .np {
   display: flex;
   align-items: center;
-  gap: 11px;
-}
-
-.island[data-state="activity"] .np {
-  display: none;
+  gap: 12px;
 }
 
 .np-art {
   flex: 0 0 auto;
   width: 54px;
   height: 54px;
-  border-radius: 10px;
+  border-radius: 11px;
   background: var(--plate-bg);
   border: 1px solid var(--plate-border);
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
 }
 
 .np-art img {
@@ -305,6 +408,11 @@ button.pill,
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.np-art svg {
+  width: 22px;
+  height: 22px;
 }
 
 .np-meta {
@@ -332,7 +440,7 @@ button.pill,
 .np-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   margin-top: 5px;
 }
 
@@ -345,17 +453,129 @@ button.pill,
   border-radius: 50%;
   cursor: default;
   display: flex;
-  transition: background var(--t-fast) var(--ease-out);
+  transition:
+    background var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-island);
 }
 
 .np-controls button:hover {
   background: var(--plate-bg);
+  transform: scale(1.12);
 }
 
 .np-controls svg {
   width: 15px;
   height: 15px;
   display: block;
+}
+
+/* --- the shelf ------------------------------------------------------------ */
+
+.shelf {
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid var(--divider);
+}
+
+.shelf-strip {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+  min-height: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--glass-edge) transparent;
+}
+
+.chip {
+  position: relative;
+  flex: 0 0 auto;
+  width: 58px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 3px;
+  border-radius: 10px;
+  cursor: default;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-island);
+}
+
+.chip:hover {
+  background: var(--plate-bg);
+  transform: translateY(-2px);
+}
+
+.chip .thumb {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+}
+
+.chip .thumb img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+
+.chip .thumb svg {
+  width: 24px;
+  height: 24px;
+}
+
+.chip span {
+  /* Without a width the label lays out to its content and is clipped by the chip
+     rather than wrapping inside it. */
+  width: 100%;
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: center;
+  max-height: 2.4em;
+  overflow: hidden;
+  /* `anywhere`, not `break-word`: a filename has no spaces to break at, and
+     break-word only takes effect when a line cannot fit any other way. */
+  overflow-wrap: anywhere;
+  color: var(--text-dim);
+}
+
+.chip .drop-x {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--glass-edge);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+
+.chip:hover .drop-x {
+  display: flex;
+}
+
+.shelf-hint {
+  margin: 8px 2px 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
+.shelf-hint[hidden] {
+  display: none;
 }
 
 /* --- live activity row ---------------------------------------------------- */
