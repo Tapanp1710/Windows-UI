@@ -546,3 +546,18 @@ All run against the release build on 2026-10-31, by driving a real mouse pointer
 | I.2 | Root cause | FOUND | a translucent light disc behind every icon, with a border and a warm shadow, cropping square icons into circles (D-046) |
 | I.3 | Fixed | PASS | icons float on the glass at 88% of the cell; verified by screenshot |
 | I.4 | Warm leftovers from the old palette | FIXED | every `rgba(60, 40, 25, …)` shadow across four stylesheets |
+
+## Wi-Fi list (2026-10-31)
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| N.1 | Chevron opens the network list in the panel | PASS | no trip to the Settings app |
+| N.2 | The joined network is shown and marked | PASS | **brucy — Connected**, accent-filled, sorted first |
+| N.3 | Signal strength | PASS | three arcs, dimmed above the reported level |
+| N.4 | Secured networks show a lock | PASS | |
+| N.5 | Duplicate SSIDs folded | PASS (by construction) | one row per SSID, strongest signal kept |
+| N.6 | Tiles hide behind the sub-view | FIXED | `[hidden]` lost to `.tiles { display: grid }`; the list had zero height (D-048) |
+| N.7 | Joining a saved network | implemented, **untested** | `WlanConnect` by profile name. Not exercised: it would drop this machine off its own network mid-session |
+| N.8 | A network with no profile | by design | opens Windows' flyout, which can ask for the password. This app holds no credentials (D-047) |
+| N.9 | Off the main thread | PASS | `cmd_wifi_list`/`connect`/`disconnect` are async; WLAN calls are cross-process |
+| N.10 | SSIDs rendered safely | PASS | `textContent`, not `innerHTML` |

@@ -55,6 +55,10 @@ features = [
   "Win32_System_Wmi",
   # The connected Wi-Fi network's name, for the Wi-Fi tile.
   "Networking_Connectivity",
+  # Available Wi-Fi networks and joining a saved one, through wlanapi.
+  "Win32_NetworkManagement_WiFi",
+  # WlanConnect and WLAN_CONNECTION_PARAMETERS are gated behind Ndis.
+  "Win32_NetworkManagement_Ndis",
   "Win32_System_Rpc",
   "Win32_System_SystemInformation",
   "Win32_Graphics_Dwm",
