@@ -3,7 +3,7 @@
 **Read this file first when resuming.**
 
 ## Current phase
-PHASE 1 (Dock) — core complete and verified. PHASES 2–6 not started.
+PHASE 1 (Dock) and PHASE 2 (Top bar) complete and verified. PHASES 3–6 not started.
 
 ## Status summary
 
@@ -11,7 +11,7 @@ PHASE 1 (Dock) — core complete and verified. PHASES 2–6 not started.
 |---|---|
 | STEP 0 — environment & feasibility | **DONE** |
 | PHASE 1 — Dock | **Core done**, some items outstanding (below) |
-| PHASE 2 — Top bar | **Not started** |
+| PHASE 2 — Top bar | **Done**, verified |
 | PHASE 3 — Launcher | **Not started** |
 | PHASE 4 — Window switcher | **Not started** |
 | PHASE 5 — Desktop widgets | **Not started** |
@@ -79,9 +79,14 @@ a recorded baseline instead of forcing "always visible".
   taskbar returns, the user's original auto-hide setting is preserved, no orphans).
 - `restore-windows.ps1` recovers the taskbar even when the whole process tree is killed.
 
-### Performance (measured over 20 s idle)
-- **Idle CPU: 0.01%** across both processes (8 cores) — target was near-0%.
-- **RAM: 38.8 MB total** (main 32.4 MB + watchdog 6.5 MB) — target was under 150 MB.
+### Performance (measured over 20 s idle, dock + top bar)
+- **Idle CPU: 0.09%** across all 9 processes (8 cores) — target was near-0%. **Met.**
+- **RAM: 202.6 MB private / 441.8 MB working set.** Target was under 150 MB. **Over.**
+
+An earlier note in this file said 38.8 MB; that was wrong — it counted only our own two
+processes and not the 7 WebView2 processes that do the actual rendering. The 150 MB
+target is not reachable with Tauri + WebView2 for a multi-window shell; see REPORT.md
+section 3.1 for the numbers and the concrete way to cut it.
 
 ---
 
