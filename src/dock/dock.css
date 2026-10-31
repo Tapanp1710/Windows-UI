@@ -72,16 +72,21 @@
 }
 
 /* The soft white glass plate every real app icon sits on. */
+/* No disc behind the icon.
+ *
+ * The plate used to paint a light translucent circle with a border and a (warm,
+ * left over from the old palette) shadow. On a dark bar that reads as every icon
+ * sitting on an inverted chip, and `overflow: hidden` cropped square icons -
+ * folders worst of all - into circles. A dock icon is its own artwork; it floats
+ * on the glass. The shape setting still rounds whatever the icon itself fills. */
 .plate {
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--plate-bg);
-  border: 1px solid var(--plate-border);
-  box-shadow: 0 1px 2px rgba(60, 40, 25, 0.12);
-  overflow: hidden;
+  background: transparent;
+  border: 0;
 }
 
 /* Icon shape is a global setting: circle | squircle | rounded. Applied here once so
@@ -99,8 +104,8 @@
 }
 
 .plate img {
-  width: 76%;
-  height: 76%;
+  width: 88%;
+  height: 88%;
   object-fit: contain;
   -webkit-user-drag: none;
   pointer-events: none;
@@ -186,7 +191,7 @@
   width: 80%;
   height: 3px;
   border-radius: 2px;
-  background: rgba(120, 95, 70, 0.22);
+  background: var(--divider);
   overflow: hidden;
   display: none;
 }
@@ -243,7 +248,7 @@
   background: var(--tooltip-bg);
   border: 1px solid var(--glass-border);
   border-radius: 8px;
-  box-shadow: 0 4px 14px rgba(60, 40, 25, 0.18);
+  box-shadow: 0 4px 14px rgba(16, 32, 62, 0.18);
   backdrop-filter: blur(18px) saturate(160%);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
   white-space: nowrap;

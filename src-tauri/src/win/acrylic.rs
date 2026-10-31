@@ -146,12 +146,17 @@ pub fn round_corners(hwnd_raw: isize, border_bgr: u32) {
     }
 }
 
-/// Hairline border colour for the theme, as the COLORREF (0x00BBGGRR) DWM wants.
-pub fn border_for(dark: bool) -> u32 {
-    // COLORREF is 0x00BBGGRR.
-    if dark {
-        0x00_4A_2C_1E // #1E2C4A
-    } else {
-        0x00_F2_E6_DC // #DCE6F2
-    }
+/// Border colour for the theme.
+///
+/// **`DWMWA_COLOR_NONE` in both themes.** Every surface here is a floating island on
+/// a transparent window; a system-drawn hairline around it reads as a ring, and in
+/// the light theme that ring is near-white, which is what kept showing up around
+/// every pop-up. The surfaces carry their own edge in CSS, where it follows the
+/// palette. Kept as a function taking `dark` so a theme can ask for a border again
+/// without changing every call site. See D-042 and D-045.
+pub fn border_for(_dark: bool) -> u32 {
+    DWMWA_COLOR_NONE
 }
+
+/// DWM's "draw no border at all" sentinel.
+const DWMWA_COLOR_NONE: u32 = 0xFFFF_FFFE;

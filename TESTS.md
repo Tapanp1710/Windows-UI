@@ -519,3 +519,30 @@ All run against the release build on 2026-10-31, by driving a real mouse pointer
 | P.7 | Hang while opening the launcher | **CAUSED BY ME, then fixed** | making `cmd_dock_items` async needed COM on a pool thread and I used STA; a tokio worker never pumps, so the next marshalled COM call deadlocked. `AppHangB1` at 22:36:44 (D-043) |
 | P.8 | After the MTA fix | PASS | 100s soak with the launcher opened: responding throughout, **no hang events** |
 | P.9 | Memory | 247 MB idle / ~303 MB once the launcher has been opened | the launcher stays warm so it opens instantly; that is the cost |
+
+## The keyboard regression (2026-10-31, late)
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| K.1 | Reported: pressing D, E, R triggers Windows shortcuts | REPRODUCED by inspection | the hook swallowed the Win key**up**, so Windows was never told the modifier was released and it stayed latched system-wide (D-044) |
+| K.2 | Immediate relief | DONE | app stopped, every modifier released with `keybd_event(…, KEYEVENTF_KEYUP)` |
+| K.3 | Win key releases properly after the fix | **PASS** | tapped Win, then `GetKeyState(VK_LWIN)` high bit = **false**. Windows no longer believes it is held, so letters are letters again |
+| K.4 | Remaining swallow points audited | PASS | Escape and Tab only — neither is a modifier, so neither can latch. The Alt release was already deliberately passed through |
+| K.5 | Win key now opens Windows Start | PASS (by design) | the brief's stated fallback; our launcher is on the dock's Start button |
+
+## White ring, second attempt
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| R.1 | Still present after D-042 | CONFIRMED by the user | removing the acrylic's own border was not enough |
+| R.2 | Remaining cause | FOUND | `DWMWA_BORDER_COLOR` still drew a hairline, near-white in the light theme, and panels pick their theme from the webview rather than our setting (D-045) |
+| R.3 | Fixed | **PASS** | `DWMWA_COLOR_NONE`. Quick panel captured and scanned on four rows: the only near-white pixels left are the label text |
+
+## Icons
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| I.1 | Pixel pipeline checked for channel swap | PASS, not the cause | BGRA→RGBA mapping is correct, alpha is un-premultiplied |
+| I.2 | Root cause | FOUND | a translucent light disc behind every icon, with a border and a warm shadow, cropping square icons into circles (D-046) |
+| I.3 | Fixed | PASS | icons float on the glass at 88% of the cell; verified by screenshot |
+| I.4 | Warm leftovers from the old palette | FIXED | every `rgba(60, 40, 25, …)` shadow across four stylesheets |

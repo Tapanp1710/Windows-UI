@@ -861,3 +861,66 @@ why every other background thread in this app already uses it.
 Worth stating as a rule, because it is the third shape of the same mistake: **work
 moved off the main thread has to be moved somewhere that can actually do it.** An
 async command is not automatically a safe place for COM.
+
+---
+
+## D-044 — The Win key is never swallowed again
+**Date:** 2026-10-31 · **Phase:** urgent fix
+
+**This one broke the user's keyboard.** Pressing D showed the desktop, E opened
+Explorer, R opened Run — every letter behaved as a chord.
+
+The hook returned `LRESULT(1)` on the Win key **release**, to stop Start opening.
+D-029 called that "exactly the keystroke that would have opened Start" and reasoned
+it was safe because the key*down* was passed through untouched. That reasoning has a
+hole: passing the keydown through tells Windows the modifier is **down**, and
+swallowing the keyup means Windows is never told it came back up. The Win modifier
+stayed latched system-wide until the app was killed.
+
+A modifier's release cannot be swallowed in isolation. To suppress Start you must
+swallow the key**down** as well, which means re-synthesising it before every
+combination — racing the real keystroke, and that is the version that breaks Win+L.
+
+**Decision:** the hook no longer touches the Win key at all. It still tracks the
+press so Alt+Tab logic is unaffected, and swallows nothing. Start opens on Win, the
+way Windows intends; our launcher opens from the dock's Start button, which it always
+did. This is the brief's own stated fallback: *"If any combo breaks, keep Windows
+Start on the Win key and log it."*
+
+`scripts\winkey-matrix.ps1` would have caught this on the first run. It was written
+for exactly this and never got to run — twice started, twice stopped. The lesson is
+not about the hook; it is that the one test guarding the riskiest change in the
+project was the one test never executed, and reasoning was accepted in its place.
+
+---
+
+## D-045 — No system-drawn border on any of our windows
+**Date:** 2026-10-31 · **Phase:** urgent fix
+
+D-042 removed the acrylic's own border and recoloured `border_for`, and the white
+ring was still there — because `DWMWA_BORDER_COLOR` still painted a hairline, and in
+the light theme that hairline is near-white. On a floating island it reads as a ring,
+and the panels pick their theme from the webview's `prefers-color-scheme`, which does
+not reliably match ours.
+
+**Decision:** `DWMWA_COLOR_NONE` in both themes. No system border on any of our
+windows; the surfaces carry their own edge in CSS, where it follows the palette and
+cannot disagree with it. The light `--glass-border` also went from pure white at 80%
+to a blue-grey, so a surface that does render light no longer draws a white outline.
+
+---
+
+## D-046 — A dock icon is its own artwork, not a chip
+**Date:** 2026-10-31 · **Phase:** urgent fix
+
+Every icon sat on a translucent light disc with a border and a drop shadow, and
+`overflow: hidden` cropped square icons — folders worst — into circles. On a dark bar
+a light disc behind every icon is what "the icons are inverted" describes: the icons
+were fine, the thing behind them was not.
+
+**Decision:** no plate. Icons render at 88% of the cell on the glass itself, as they
+do in the macOS dock. The shape setting still applies to whatever the icon fills.
+
+The shadows left behind on those plates were also still `rgba(60, 40, 25, …)` — warm
+brown, from the palette replaced in D-031. Every remaining one across the four
+stylesheets is now the blue of the current palette.
