@@ -62,6 +62,16 @@ impl DockItem {
 static ICON_CACHE: Mutex<Option<HashMap<String, Option<String>>>> = Mutex::new(None);
 
 fn cached_icon(parsing_name: &str) -> Option<String> {
+    // These commands are async now, so this can land on a pool thread with no
+    // apartment, and shell icon extraction needs one. It must be **multi-threaded**:
+    // an STA thread is required to pump messages, and a tokio worker never does, so
+    // marking one STA deadlocks the next COM call that needs marshalling. That is
+    // exactly what hung the app the moment the launcher opened. MTA has no such
+    // requirement. Only reached on a cache miss.
+    unsafe {
+        use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+    }
     let mut guard = ICON_CACHE.lock().unwrap();
     let cache = guard.get_or_insert_with(HashMap::new);
     if let Some(hit) = cache.get(parsing_name) {

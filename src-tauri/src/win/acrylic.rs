@@ -64,9 +64,12 @@ fn apply(hwnd_raw: isize, state: u32, tint: u32) -> bool {
     };
     let mut policy = AccentPolicy {
         accent_state: state,
-        // Draw the material on all four edges. Without this the acrylic is only
-        // composited where Windows thinks a border would be.
-        accent_flags: 2,
+        // 0, not 2. Flag 2 asks the composition layer to draw its own border around
+        // the acrylic, and that border is a bright near-white line regardless of the
+        // tint - the white ring that showed around every panel. The hairline we do
+        // want comes from DWMWA_BORDER_COLOR in `round_corners`, which follows the
+        // theme. The blur still covers the whole window without this flag.
+        accent_flags: 0,
         gradient_color: tint,
         animation_id: 0,
     };
@@ -100,11 +103,11 @@ pub fn disable(hwnd_raw: isize) {
 /// a warm near-black in dark mode.
 pub fn tint_for(dark: bool) -> u32 {
     if dark {
-        // 0xAABBGGRR — alpha 0xA8 over #1C1714
-        0xA8_14_17_1C
+        // 0xAABBGGRR — alpha 0xA8 over #0D1830, the dark end of the palette.
+        0xA8_30_18_0D
     } else {
-        // alpha 0xB4 over #FAF6F1
-        0xB4_F1_F6_FA
+        // alpha 0xB4 over #F7FAFE, the light end.
+        0xB4_FE_FA_F7
     }
 }
 
@@ -145,9 +148,10 @@ pub fn round_corners(hwnd_raw: isize, border_bgr: u32) {
 
 /// Hairline border colour for the theme, as the COLORREF (0x00BBGGRR) DWM wants.
 pub fn border_for(dark: bool) -> u32 {
+    // COLORREF is 0x00BBGGRR.
     if dark {
-        0x00_3A_32_2C
+        0x00_4A_2C_1E // #1E2C4A
     } else {
-        0x00_E8_EE_F2
+        0x00_F2_E6_DC // #DCE6F2
     }
 }

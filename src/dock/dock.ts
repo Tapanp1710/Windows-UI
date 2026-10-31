@@ -558,6 +558,9 @@ function applyPrefs(p: SystemPrefs): void {
   // The icon-size setting existed from PHASE 1 but nothing read it until the
   // settings window could change it.
   root.style.setProperty("--dock-icon", `${p.iconSize}px`);
+  // Settings can change this from the other window, so the pin follows rather than
+  // only being written by its own click.
+  if (document.getElementById("tray-pin")) paintPin(p.alwaysVisible);
 }
 
 /** Only re-render when something actually changed, to keep idle CPU near zero. */
@@ -606,16 +609,19 @@ const TRAY_ICON = {
   vol: SVG(`<path d="M4 9.5h3L11 6v12l-4-3.5H4z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6"/>`),
   volMute: SVG(`<path d="M4 9.5h3L11 6v12l-4-3.5H4z" fill="currentColor"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>`),
   shelf: SVG(`<path d="M4 7.5h16M4 7.5v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-10"/><path d="M9.5 4.5h5l1.5 3h-8z"/>`),
+  // Pinned: the pin is pushed in, upright. Unpinned: tilted, as if lifted out.
+  pin: SVG(`<path d="M12 16.5V21"/><path d="M8 4.5h8l-1 5 2.5 2.5v1.5H6.5V12L9 9.5z"/>`),
+  pinOff: SVG(`<g transform="rotate(38 12 11)"><path d="M12 16.5V21"/><path d="M8 4.5h8l-1 5 2.5 2.5v1.5H6.5V12L9 9.5z"/></g>`),
 };
 
 /** Battery drawn as a fill, so the level reads without a number. */
 function battSvg(pct: number, charging: boolean): string {
-  const w = Math.max(0, Math.min(1, pct / 100)) * 15.5;
+  const w = Math.max(0, Math.min(1, pct / 100)) * 14.5;
   const fill = charging ? "var(--accent)" : pct <= 20 ? "#e5484d" : "currentColor";
   return `<svg viewBox="0 0 32 24" fill="none" stroke="currentColor" stroke-width="1.6">
     <rect x="1.5" y="6" width="22" height="12" rx="3.5"/>
     <path d="M25.5 10.5v3" stroke-linecap="round"/>
-    <rect x="3.7" y="8.2" width="${w}" height="7.6" rx="2" fill="${fill}" stroke="none"/>
+    <rect x="4.2" y="8.8" width="${w}" height="6.4" rx="1.6" fill="${fill}" stroke="none"/>
     ${charging ? '<path d="M13.6 8.6 10.4 13h3.2l-1 3.2L16 11.6h-3z" fill="var(--accent-text)" stroke="none"/>' : ""}
   </svg>`;
 }
@@ -745,10 +751,28 @@ async function refreshShelf(): Promise<void> {
   }
 }
 
+/** Mirrors `dockAlwaysVisible`: pinned means the dock never auto-hides. */
+function paintPin(pinned: boolean): void {
+  const btn = document.getElementById("tray-pin")!;
+  btn.innerHTML = `<span class="tray-ico">${pinned ? TRAY_ICON.pin : TRAY_ICON.pinOff}</span>`;
+  btn.classList.toggle("on", pinned);
+  btn.setAttribute("aria-label", pinned ? "Unpin the dock (auto-hide)" : "Pin the dock (always visible)");
+  btn.setAttribute("aria-pressed", String(pinned));
+}
+
 function wireTray(): void {
   trayEl.hidden = false;
   traySepEl.hidden = false;
   document.getElementById("ico-shelf")!.innerHTML = TRAY_ICON.shelf;
+
+  paintPin(prefs.alwaysVisible);
+  document.getElementById("tray-pin")!.addEventListener("click", async () => {
+    const next = !prefs.alwaysVisible;
+    paintPin(next);
+    // One setting, one source of truth: the Rust sampler reads it straight back,
+    // so the dock stops or starts auto-hiding without a restart.
+    await invoke("cmd_patch_settings", { patch: { dockAlwaysVisible: next } });
+  });
 
   document
     .getElementById("tray-status")!
