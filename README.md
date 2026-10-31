@@ -74,6 +74,73 @@ be and call that a faithful restore. `restore-windows.ps1` refuses a foreign one
 
 ---
 
+---
+
+## Setting this up on a new laptop
+
+Clone the repo, open the folder in Claude Code, and paste the prompt below. It does
+the whole setup: toolchain, dependencies, build, baseline capture, first run.
+
+```
+Set this project up on this machine and run it.
+
+It is a macOS-style desktop UI layer for Windows 11, built with Tauri v2 (Rust
+backend, TypeScript frontend). Read README.md, REPORT.md and DECISIONS.md first —
+DECISIONS.md explains why things are the way they are, and several of those reasons
+are the result of bugs that cost real time, so do not undo them casually.
+
+Do all of this without ever running anything as administrator. If a step would need
+an admin prompt, skip it, write down why in SYSTEM_CHANGES.md, and carry on with the
+rest.
+
+1. Check what is already installed: Node 18+, Rust with the x86_64-pc-windows-gnu
+   target, and MinGW-w64 GCC at %LOCALAPPDATA%\macui-toolchain\mingw64.
+2. Install whatever is missing, per-user only:
+   - rustup from https://win.rustup.rs, default host x86_64-pc-windows-gnu. The
+     MSVC target is NOT usable here: its linker needs the Visual Studio Build
+     Tools, which need an admin prompt.
+   - A portable WinLibs MinGW-w64 UCRT build, extracted (not installed) to
+     %LOCALAPPDATA%\macui-toolchain. scripts\env.ps1 expects exactly that path;
+     if you put it elsewhere, edit that one line.
+   - Node from nodejs.org if it is missing.
+   Record every one of these in SYSTEM_CHANGES.md with its exact undo step.
+3. Run: powershell -ExecutionPolicy Bypass -File scripts\capture-baseline.ps1
+   This records THIS machine's original taskbar state, work area, theme and
+   wallpaper so restore-windows.ps1 can put them back. It is per-machine and is
+   deliberately not in the repo — do not copy one from anywhere else.
+4. npm install
+5. . .\scripts\env.ps1    (puts the toolchain on PATH for this shell only)
+6. npm run tauri build
+7. Start src-tauri\target\release\macui.exe and confirm, with screenshots, that:
+elease\macui.exe and confirm, with screenshots, that:
+   the dock appears at the bottom edge on hover; its tray shows network, Bluetooth,
+   sound, battery and the clock; clicking the tray opens the quick panel upward;
+   the magnifier expands the bar into a search field that finds apps; and Alt+Tab
+   shows the switcher.
+8. Verify the safety path before you call it done: hard-kill the main macui
+   process and confirm the Windows taskbar comes back with its original auto-hide
+   setting, and that no orphan processes are left.
+9. Tell me what you installed, what you changed on this machine, and anything that
+   did not work.
+
+Two things to know going in, both the hard way:
+- A synchronous Tauri command runs on the main thread. It may compute, but it must
+  never wait — no COM round trips, no process spawns, no joining a thread. That
+  mistake made Windows close the app as hung, four separate times.
+- Never swallow a modifier key's release in the keyboard hook. Passing the keydown
+  through tells Windows the modifier is down; swallowing the keyup means it is
+  never told otherwise, and the whole keyboard latches.
+```
+
+### If you just want to run it, not build it
+
+Grab `macui_0.1.0_x64-setup.exe` from the repo's Releases page and run it. It
+installs per user, needs no admin prompt, and the only other thing the machine needs
+is the WebView2 runtime, which Windows 11 already ships.
+
+Still run `scripts\capture-baseline.ps1` once afterwards, so this machine's "before"
+is recorded.
+
 ## Getting out
 
 ```powershell

@@ -281,7 +281,7 @@ Twenty-six, all in **[DECISIONS.md](DECISIONS.md)**. The ones that would change 
 
 ### Run it
 ```powershell
-cd C:\Users\ADMIN\OneDrive\Desktop\ui
+cd <the folder you cloned into>
 .\src-tauri\target\release\macui.exe
 ```
 
@@ -310,7 +310,7 @@ wallpaper back.
 
 ### Fully restore normal Windows (works even after a crash)
 ```powershell
-cd C:\Users\ADMIN\OneDrive\Desktop\ui
+cd <the folder you cloned into>
 powershell -ExecutionPolicy Bypass -File .\restore-windows.ps1
 ```
 Restores the taskbar to the **exact** state recorded in `baseline-windows.json` before
