@@ -20,7 +20,7 @@
 use base64::Engine;
 use windows::core::{Interface, HSTRING, PCWSTR};
 use windows::Win32::Foundation::SIZE;
-use windows::Win32::Graphics::Gdi::{DeleteObject, GetObjectW, BITMAP, HBITMAP};
+use windows::Win32::Graphics::Gdi::{DeleteObject, GetObjectW, BITMAP, DIBSECTION, HBITMAP};
 use windows::Win32::UI::Shell::{
     IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_BIGGERSIZEOK,
     SIIGBF_RESIZETOFIT,
@@ -98,6 +98,13 @@ fn icon_rgba(parsing_name: &str) -> Option<Rgba> {
 }
 
 /// Copy a 32-bit BGRA HBITMAP into straight (non-premultiplied) RGBA.
+///
+/// **Row order has to be asked for, not assumed.** A DIB with a positive `biHeight`
+/// is stored *bottom-up*: the first row in memory is the bottom row of the image.
+/// Negative means top-down. `BITMAP.bmHeight` from `GetObjectW` is always positive,
+/// so it cannot answer the question - reading it as top-down silently rendered every
+/// shell icon upside down, which is what "the images are inverted" was. Querying a
+/// `DIBSECTION` instead gives the real `biHeight` and its sign.
 unsafe fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Option<Rgba> {
     let mut info = BITMAP::default();
     let written = GetObjectW(
@@ -108,6 +115,21 @@ unsafe fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Option<Rgba> {
     if written == 0 || info.bmWidth <= 0 || info.bmHeight <= 0 || info.bmBitsPixel != 32 {
         return None;
     }
+
+    // If this is a DIB section we get the header and with it the row order. If it is
+    // not, `GetObjectW` writes less than a DIBSECTION and top-down is the safe guess
+    // (it is what the shell's own image factory documents).
+    let mut dib = DIBSECTION::default();
+    let dib_written = GetObjectW(
+        hbitmap,
+        std::mem::size_of::<DIBSECTION>() as i32,
+        Some(&mut dib as *mut DIBSECTION as *mut _),
+    );
+    let top_down = if dib_written as usize == std::mem::size_of::<DIBSECTION>() {
+        dib.dsBmih.biHeight < 0
+    } else {
+        true
+    };
 
     let w = info.bmWidth as usize;
     let h = info.bmHeight as usize;
@@ -120,7 +142,10 @@ unsafe fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Option<Rgba> {
     let mut out = vec![0u8; w * h * 4];
 
     for y in 0..h {
-        let row = &src[y * stride..y * stride + w * 4];
+        // `y` is the destination row, counted from the top. A bottom-up DIB holds
+        // that row at the mirrored offset.
+        let sy = if top_down { y } else { h - 1 - y };
+        let row = &src[sy * stride..sy * stride + w * 4];
         for x in 0..w {
             let b = row[x * 4];
             let g = row[x * 4 + 1];
