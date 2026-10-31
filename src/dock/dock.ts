@@ -594,6 +594,15 @@ async function main(): Promise<void> {
     // log rather than leaving a permanently visible dock and no explanation.
     await invoke("cmd_log", { msg: `listen() FAILED, auto-hide disabled: ${e}` });
   }
+
+  // Sync to the sampler's actual state. Any reveal/conceal emitted while this page
+  // was still loading is gone, so without this the dock can sit permanently
+  // concealed when the pointer was already at the bottom edge at launch.
+  try {
+    setRevealed(await invoke<boolean>("cmd_dock_revealed"));
+  } catch {
+    /* keep the concealed default */
+  }
   await listen("dock:prefs", async () => {
     applyPrefs(await invoke<SystemPrefs>("cmd_system_prefs"));
   });

@@ -41,6 +41,11 @@ features = [
   "Win32_System_LibraryLoader",
   "Win32_UI_Controls",
   "Win32_Security",
+  "Win32_System_Power",
+  "Win32_Media_Audio",
+  "Win32_Media_Audio_Endpoints",
+  "Win32_Networking_NetworkListManager",
+  "Win32_System_Variant",
 ]
 
 [profile.release]

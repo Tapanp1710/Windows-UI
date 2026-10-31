@@ -39,6 +39,14 @@ const POLL_ACTIVE: Duration = Duration::from_millis(40);
 /// Set from settings; when true the dock never auto-hides.
 pub static ALWAYS_VISIBLE: AtomicBool = AtomicBool::new(false);
 
+/// The sampler's current reveal state.
+///
+/// Exposed so the frontend can *ask* on startup instead of relying on catching an
+/// event: the sampler emits only on a change, and anything emitted before the webview
+/// has attached its listener is lost for good. That left the dock stuck concealed
+/// whenever the pointer happened to already be at the bottom edge at launch.
+pub static REVEALED: AtomicBool = AtomicBool::new(false);
+
 /// Dock window rect in physical pixels: (left, top, right, bottom).
 /// Published by the main thread, read by the sampler.
 pub static DOCK_RECT: Mutex<Option<(i32, i32, i32, i32)>> = Mutex::new(None);
@@ -60,12 +68,14 @@ pub fn start(app: AppHandle) -> Arc<AtomicBool> {
 
     std::thread::spawn(move || {
         let mut leave_at: Option<Instant> = None;
+        let mut ticks: u32 = 0;
 
         // Start concealed: the dock should be out of the way until summoned. The
         // frontend may not have its listener attached yet, so it also starts in the
         // concealed CSS state and this is only a confirmation.
         let _ = app.emit("dock:conceal", ());
         let mut revealed = false;
+        REVEALED.store(false, Ordering::SeqCst);
         crate::logln!("autohide sampler started");
 
         let (_, screen_h) = crate::win::taskbar::screen_size();
@@ -83,6 +93,7 @@ pub fn start(app: AppHandle) -> Arc<AtomicBool> {
                 leave_at = None;
                 if !revealed {
                     revealed = true;
+                    REVEALED.store(true, Ordering::SeqCst);
                     let _ = app.emit("dock:reveal", ());
                 }
             } else if revealed {
@@ -90,10 +101,22 @@ pub fn start(app: AppHandle) -> Arc<AtomicBool> {
                     None => leave_at = Some(Instant::now() + CONCEAL_DELAY),
                     Some(t) if Instant::now() >= t => {
                         revealed = false;
+                        REVEALED.store(false, Ordering::SeqCst);
                         leave_at = None;
                         let _ = app.emit("dock:conceal", ());
                     }
                     Some(_) => {}
+                }
+            }
+
+            // Cheap periodic re-assert: a display change or a shell event can reset
+            // the work area, and a silently-written reservation has no notification
+            // to hook, so it is checked here rather than trusted once.
+            ticks = ticks.wrapping_add(1);
+            if ticks % 40 == 0 {
+                let want = crate::RESERVED_TOP.load(Ordering::SeqCst);
+                if want > 0 && crate::win::taskbar::work_area().top != want {
+                    crate::win::taskbar::set_reserved(want, 0);
                 }
             }
 

@@ -32,6 +32,26 @@
         "maximizable": false,
         "minimizable": false,
         "closable": false
+      },
+      {
+        "label": "topbar",
+        "url": "topbar.html",
+        "title": "macui top bar",
+        "width": 1280,
+        "height": 56,
+        "x": 0,
+        "y": 0,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "focus": false,
+        "visible": true,
+        "maximizable": false,
+        "minimizable": false,
+        "closable": false
       }
     ]
   },
