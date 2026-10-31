@@ -24,24 +24,31 @@ No registry keys were written. No system-wide software was installed. No MSIs ra
 
 ## 2. Windows UI state
 
-**None yet.** The taskbar has not been hidden, no `Shell_TrayWnd` state has been
-changed, no work area has been altered, no startup entry has been created, and no
-registry value has been written.
+All of these are **runtime only**: they exist while `macui.exe` is running and are undone
+when it stops, when it is killed (by the watchdog), or by `restore-windows.ps1`.
+**No registry value is written for any of them.**
 
-When PHASE 1 begins, every entry will be added here *before* the change is made, in this
-form:
+| # | What | Changed how | Restored how |
+|---|---|---|---|
+| U-1 | Windows taskbar hidden | `ShowWindow(Shell_TrayWnd, SW_HIDE)` — and `Shell_SecondaryTrayWnd` on multi-monitor | `SW_SHOW` on clean exit, by the watchdog on a hard kill, or by `restore-windows.ps1` |
+| U-2 | Taskbar auto-hide state | `SHAppBarMessage(ABM_SETSTATE)` | Restored to the **recorded original** from `baseline-windows.json`. On this machine that is auto-hide ON, which is what you already had — it is not forced to "always visible" |
+| U-3 | Desktop work area | `SystemParametersInfo(SPI_SETWORKAREA)` **without** `SPIF_SENDCHANGE`, reserving 63px at the top for the top bar | Reset to the full screen *with* the broadcast, so every app re-lays-out |
 
-| # | Key / setting | Old value | New value | Undo |
-|---|---|---|---|---|
+Nothing else is touched. In particular: no startup entry has been created (PHASE 6 was
+not reached), no wallpaper was changed, no theme setting was changed, and no shortcut
+or key binding was added, removed or remapped anywhere.
 
-Planned entries, for reference (not yet applied):
+### A note on the two shortcuts the UI sends
+The Start button sends **Ctrl+Esc**, and the top bar sends **Win+A** / **Win+N**, through
+`SendInput`. These *send* a keystroke the way any automation tool does; they do **not**
+install a hook, intercept a key, or remap anything. Every Windows shortcut continues to
+work exactly as before.
 
-- Taskbar auto-hide / visibility — changed at runtime via `SHAppBarMessage` only, which
-  is process-local and reverts the instant the app exits or is killed.
-- Work area — `SystemParametersInfo(SPI_SETWORKAREA)`, restored on exit and by the
-  watchdog.
-- Startup entry — a `.lnk` in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`
-  (per-user, no admin, no registry).
+### Known gap
+Killing the **entire process tree** at once (e.g. "End process tree" in Task Manager)
+kills the watchdog along with the app, so U-1..U-3 stay in effect until you run
+`restore-windows.ps1`. Every other exit path — clean quit, crash, single-process kill,
+power loss on next boot — is covered.
 
 ---
 
