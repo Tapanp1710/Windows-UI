@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>macui panel</title>
+    <script>
+      window.__diag = [];
+      function __report(kind, msg) {
+        window.__diag.push(kind + ": " + msg);
+        try {
+          window.__TAURI_INTERNALS__.invoke("cmd_log", { msg: "[panel] " + kind + ": " + msg });
+        } catch (e) {}
+      }
+      addEventListener(
+        "error",
+        function (e) {
+          if (e.target && e.target !== window && e.target.tagName) {
+            __report("LOAD-FAIL", e.target.tagName + " " + (e.target.src || e.target.href));
+          } else {
+            __report("ERR", e.message + " @" + e.lineno);
+          }
+        },
+        true,
+      );
+      addEventListener("unhandledrejection", function (e) {
+        __report("REJECT", String(e.reason));
+      });
+    </script>
+    <link rel="stylesheet" href="./shared/theme.css" />
+    <link rel="stylesheet" href="./panel/panel.css" />
+  </head>
+  <body>
+    <!-- One page, two panels. Which one is shown comes from ?kind= in the URL, so
+         both share a window, a stylesheet and the glass treatment. -->
+
+    <main id="quick" class="panel" hidden>
+      <div class="tiles">
+        <button class="tile" id="t-wifi" type="button" aria-pressed="false">
+          <span class="tile-icon" id="i-wifi"></span>
+          <span class="tile-text">
+            <span class="tile-name">Wi-Fi</span>
+            <span class="tile-sub" id="s-wifi">—</span>
+          </span>
+        </button>
+        <button class="tile" id="t-bt" type="button" aria-pressed="false">
+          <span class="tile-icon" id="i-bt"></span>
+          <span class="tile-text">
+            <span class="tile-name">Bluetooth</span>
+            <span class="tile-sub" id="s-bt">—</span>
+          </span>
+        </button>
+      </div>
+
+      <div class="slider-row">
+        <button class="mini" id="mute" type="button" title="Mute"></button>
+        <input type="range" id="vol" min="0" max="100" step="1" aria-label="Volume" />
+        <output id="vol-out">—</output>
+      </div>
+
+      <div class="batt-row" id="batt-row">
+        <span class="batt-label">Battery</span>
+        <span class="meter"><i id="batt-bar"></i></span>
+        <span class="batt-value" id="batt-value">—</span>
+      </div>
+
+      <nav class="links">
+        <button data-page="ms-settings:network-wifi" type="button">Network</button>
+        <button data-page="ms-settings:bluetooth" type="button">Bluetooth</button>
+        <button data-page="ms-settings:sound" type="button">Sound</button>
+        <button data-page="ms-settings:powersleep" type="button">Power</button>
+      </nav>
+    </main>
+
+    <main id="calendar" class="panel" hidden>
+      <header class="cal-today">
+        <div class="cal-dow" id="cal-dow"></div>
+        <div class="cal-date" id="cal-date"></div>
+      </header>
+      <div class="cal-head" id="cal-month"></div>
+      <div class="cal-grid" id="cal-grid"></div>
+      <nav class="links">
+        <button id="open-notifications" type="button">Windows notifications</button>
+        <button data-page="ms-settings:dateandtime" type="button">Date &amp; time</button>
+      </nav>
+    </main>
+
+    <script type="module" src="./panel/panel.ts"></script>
+  </body>
+</html>

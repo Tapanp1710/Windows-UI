@@ -47,10 +47,15 @@ features = [
   "Win32_Networking_NetworkListManager",
   "Win32_System_Variant",
   "Win32_System_SystemInformation",
+  "Win32_Graphics_Dwm",
   # WinRT, for the media-session widget: the same source Windows' own volume flyout
   # and lock screen read.
   "Foundation",
   "Media_Control",
+  "Storage_Streams",
+  "Devices_Radios",
+  # GetRadiosAsync returns an IVectorView, which is gated behind this
+  "Foundation_Collections",
 ]
 
 [profile.release]

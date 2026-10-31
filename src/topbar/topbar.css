@@ -7,10 +7,26 @@
  * always-on-top bar does not steal the top strip of the screen.
  */
 
+/* The bar slides up out of the way and comes back when the pointer touches the top
+   edge, exactly as the dock does at the bottom. The WINDOW never moves - moving a
+   Win32 window every frame is where this kind of jank comes from - only this
+   transform, and the hit-test region is emptied while it is away so the strip
+   behaves like bare screen. */
+.bar.hidden {
+  transform: translateY(calc(-100% - var(--shadow-reach)));
+}
+
+.bar.no-anim {
+  transition: none !important;
+}
+
 .bar {
   position: relative;
   width: 100%;
   height: 100%;
+  transform: translateY(0);
+  transition: transform var(--t-slow) var(--ease-out);
+  will-change: transform;
   padding: 6px var(--edge-margin) 0;
   display: flex;
   align-items: flex-start;
@@ -159,4 +175,231 @@ button.pill,
   border-radius: 50%;
   background: var(--accent);
   margin-left: 2px;
+}
+
+/* ===========================================================================
+ * The island
+ *
+ * The centre pill, which grows. Collapsed it is the clock; hovering expands it to
+ * what is playing; a volume change, the charger going in or out, or a track change
+ * expands it for a moment on its own.
+ *
+ * Everything animates on `transform` and `opacity` and on a `max-height` that is
+ * only ever a few hundred pixels - no window is resized, and nothing is laid out
+ * per frame. The top bar window is already tall enough to hold the expanded body
+ * (TOPBAR_WINDOW_CSS_HEIGHT), so there is no window dance either.
+ * =========================================================================== */
+
+.island {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The collapsed pill grows a little when something is going on, which is the cue
+   that there is more to see. */
+.island-pill {
+  transition:
+    transform var(--t-base) var(--ease-out),
+    padding var(--t-base) var(--ease-out);
+}
+
+.island[data-state="open"] .island-pill,
+.island[data-state="activity"] .island-pill {
+  transform: scale(1.04);
+}
+
+/* Little lead/trail slots either side of the clock: the album art while something
+   plays, and a live glyph while an activity is showing. */
+.island-lead,
+.island-trail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 0;
+  height: 16px;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    width var(--t-base) var(--ease-out),
+    opacity var(--t-base) var(--ease-out);
+}
+
+.island-lead.on,
+.island-trail.on {
+  width: 16px;
+  opacity: 1;
+}
+
+.island-lead img {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.island-trail svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+/* --- the expanded body ---------------------------------------------------- */
+
+.island-body {
+  width: 304px;
+  padding: 0 12px;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-8px) scale(0.97);
+  transform-origin: top center;
+  pointer-events: none;
+  transition:
+    max-height var(--t-slow) var(--ease-out),
+    opacity var(--t-base) var(--ease-out),
+    transform var(--t-slow) var(--ease-out),
+    padding var(--t-slow) var(--ease-out);
+}
+
+.island[data-state="open"] .island-body,
+.island[data-state="activity"] .island-body {
+  max-height: 120px;
+  padding: 12px;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+/* An activity is a one-line thing; now playing is the taller layout. */
+.island[data-state="activity"] .island-body {
+  max-height: 64px;
+}
+
+.np {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.island[data-state="activity"] .np {
+  display: none;
+}
+
+.np-art {
+  flex: 0 0 auto;
+  width: 54px;
+  height: 54px;
+  border-radius: 10px;
+  background: var(--plate-bg);
+  border: 1px solid var(--plate-border);
+  overflow: hidden;
+}
+
+.np-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.np-meta {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.np-title {
+  font-size: var(--fs-label);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.np-artist {
+  font-size: var(--fs-small);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 15px;
+}
+
+.np-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+}
+
+.np-controls button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 3px;
+  border-radius: 50%;
+  cursor: default;
+  display: flex;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.np-controls button:hover {
+  background: var(--plate-bg);
+}
+
+.np-controls svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+/* --- live activity row ---------------------------------------------------- */
+
+.np-activity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.np-activity[hidden] {
+  display: none;
+}
+
+.act-icon {
+  display: flex;
+  width: 18px;
+}
+
+.act-icon svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.act-text {
+  font-size: var(--fs-small);
+  white-space: nowrap;
+  min-width: 48px;
+}
+
+.act-meter {
+  flex: 1 1 auto;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--glass-edge);
+  overflow: hidden;
+}
+
+.act-meter i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width var(--t-base) var(--ease-out);
 }

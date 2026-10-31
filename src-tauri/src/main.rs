@@ -46,6 +46,24 @@ static AUTOHIDE_RUNNING: Mutex<Option<std::sync::Arc<AtomicBool>>> = Mutex::new(
 /// The widget layer's window handle, so the sampler can keep it parked just above the
 /// desktop. 0 when there is no widget layer.
 pub static WIDGETS_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+/// The open panel's rectangle in physical pixels, (left, top, right, bottom), or
+/// None when no panel is open.
+///
+/// A flyout has to go away when you click somewhere else. Doing that on the window
+/// losing focus does not work here: the top bar is deliberately not focusable, so
+/// clicking a pill leaves focus on whatever was in front, and the panel was handed
+/// focus on creation and lost it again a moment later - it closed itself every time,
+/// within a fraction of a second.
+///
+/// So the panel never takes focus either, and the sampler watches for a mouse button
+/// going down outside this rectangle. Same rule the user expects, and it never
+/// interrupts whatever they were typing in.
+pub static PANEL_RECT: Mutex<Option<(i32, i32, i32, i32)>> = Mutex::new(None);
+/// Which panel the next window should show: "quick" or "calendar". Set before the
+/// window is built and read back by the page. A query string would have been
+/// simpler, but `WebviewUrl::App` takes a PathBuf, so "panel.html?kind=quick" is a
+/// filename, not a URL with a parameter.
+static PANEL_KIND: Mutex<String> = Mutex::new(String::new());
 /// Set while the tray overflow is deliberately showing the Windows taskbar, so the
 /// periodic re-assert does not yank it away mid-click.
 pub static TASKBAR_SHOW_ALLOWED: AtomicBool = AtomicBool::new(false);
@@ -169,6 +187,15 @@ fn main() {
             cmd_media_control,
             cmd_set_widget_positions,
             cmd_widget_restore_focus,
+            cmd_topbar_revealed,
+            cmd_glass,
+            cmd_radios,
+            cmd_set_radio,
+            cmd_open_ms_settings,
+            cmd_open_panel,
+            cmd_close_panel,
+            cmd_panel_kind,
+            cmd_media_art,
         ])
         .setup(|app| {
             if let Err(e) = build_tray(app.handle()) {
@@ -214,10 +241,15 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { .. } = event {
-                if window.label() == "dock" {
+            match event {
+                WindowEvent::CloseRequested { .. } if window.label() == "dock" => {
                     restore_windows_state();
                 }
+                WindowEvent::Destroyed if window.label() == "panel" => {
+                    autohide::TOPBAR_PINNED.store(false, Ordering::SeqCst);
+                    *PANEL_RECT.lock().unwrap() = None;
+                }
+                _ => {}
             }
         })
         .build(tauri::generate_context!())
@@ -271,6 +303,7 @@ struct StatusPayload {
     network: win::status::Network,
     focused: win::status::FocusedApp,
     bluetooth: BluetoothStatus,
+    media: win::media::NowPlaying,
 }
 
 #[derive(serde::Serialize)]
@@ -289,6 +322,7 @@ fn cmd_status() -> StatusPayload {
         network: win::status::network(),
         focused: win::status::focused_app(),
         bluetooth: BluetoothStatus { present, on },
+        media: win::media::now_playing(),
     }
 }
 
@@ -299,6 +333,9 @@ struct RegionRect {
     y: i32,
     w: i32,
     h: i32,
+    /// Corner radius in CSS pixels. 0 for a plain rectangle.
+    #[serde(default)]
+    r: i32,
 }
 
 /// Limit a window's clickable area to the given rectangles.
@@ -310,7 +347,7 @@ struct RegionRect {
 fn cmd_set_topbar_regions(window: tauri::Window, rects: Vec<RegionRect>) -> tauri::Result<()> {
     let scale = window.scale_factor().unwrap_or(1.0);
     // The frontend measures in CSS pixels; SetWindowRgn works in physical ones.
-    let phys: Vec<(i32, i32, i32, i32)> = rects
+    let phys: Vec<(i32, i32, i32, i32, i32)> = rects
         .iter()
         .map(|r| {
             (
@@ -318,12 +355,154 @@ fn cmd_set_topbar_regions(window: tauri::Window, rects: Vec<RegionRect>) -> taur
                 (r.y as f64 * scale).floor() as i32,
                 (r.w as f64 * scale).ceil() as i32,
                 (r.h as f64 * scale).ceil() as i32,
+                (r.r as f64 * scale).round() as i32,
             )
         })
         .collect();
     let hwnd = window.hwnd()?.0 as isize;
     win::set_window_region(hwnd, &phys);
     Ok(())
+}
+
+/* ------------------------------------------------------- top bar panels
+ * The brief originally said that clicking Wi-Fi, Bluetooth, volume or the clock
+ * must open Windows' own flyout. It did, and that worked - but those flyouts open
+ * down by the Windows taskbar, nowhere near the bar you clicked, which reads as a
+ * bug even though it is not. These panels put the controls where the click was.
+ *
+ * They are not mock-ups of the Windows panels: the Wi-Fi and Bluetooth switches
+ * drive the real radios, the volume slider drives the real endpoint, and every
+ * panel carries a link to the matching Windows settings page for everything we
+ * deliberately do not duplicate. See DECISIONS D-022.
+ */
+
+#[tauri::command]
+fn cmd_radios() -> Vec<win::radios::RadioInfo> {
+    win::radios::list()
+}
+
+#[tauri::command]
+fn cmd_set_radio(kind: String, on: bool) -> bool {
+    win::radios::set(&kind, on)
+}
+
+/// Open a Windows Settings page, e.g. "ms-settings:network-wifi".
+///
+/// Only `ms-settings:` URIs are accepted. This command is reachable from page
+/// script, and handing arbitrary strings to ShellExecute from there would be a way
+/// to launch anything at all.
+#[tauri::command]
+fn cmd_open_ms_settings(page: String) -> bool {
+    if !page.starts_with("ms-settings:") {
+        logln!("refused a non-settings URI: {page}");
+        return false;
+    }
+    win::pins::launch(&page)
+}
+
+/// Open one of the top bar's panels, anchored under the pill that was clicked.
+///
+/// `kind` is "quick" or "calendar". `anchor_x` is where the panel should be centred
+/// in CSS pixels; it is clamped so a panel near a screen edge stays on screen.
+#[tauri::command]
+async fn cmd_open_panel(
+    app: tauri::AppHandle,
+    kind: String,
+    anchor_x: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    logln!("open panel '{kind}' anchored at {anchor_x} ({width}x{height})");
+    // One panel at a time: opening the calendar should dismiss quick settings, the
+    // way one Windows flyout replaces another.
+    close_panel(&app);
+
+    let (sw, _) = win::taskbar::screen_size();
+    let scale = app
+        .get_webview_window("topbar")
+        .and_then(|w| w.scale_factor().ok())
+        .unwrap_or(1.0);
+    let logical_w = sw as f64 / scale;
+    let margin = 12.0;
+    let x = (anchor_x - width / 2.0).clamp(margin, (logical_w - width - margin).max(margin));
+    *PANEL_KIND.lock().unwrap() = kind.clone();
+
+    let built = tauri::WebviewWindowBuilder::new(
+        &app,
+        "panel",
+        tauri::WebviewUrl::App("panel.html".into()),
+    )
+    .title("macui panel")
+    .inner_size(width, height)
+    .position(x, 52.0)
+    .resizable(false)
+    .decorations(false)
+    .transparent(true)
+    .shadow(true)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    // Never takes focus, so opening it does not interrupt whatever the user is
+    // working in. It is dismissed by a click outside instead - see PANEL_RECT.
+    .focused(false)
+    .focusable(false)
+    .additional_browser_args(BROWSER_ARGS)
+    .build();
+
+    match built {
+        Ok(w) => {
+            autohide::TOPBAR_PINNED.store(true, Ordering::SeqCst);
+            // Published for the click-outside check. Taken from the window itself
+            // rather than recomputed, so DPI rounding cannot put the two out of step.
+            if let (Ok(pos), Ok(size)) = (w.outer_position(), w.outer_size()) {
+                *PANEL_RECT.lock().unwrap() = Some((
+                    pos.x,
+                    pos.y,
+                    pos.x + size.width as i32,
+                    pos.y + size.height as i32,
+                ));
+            }
+            logln!("panel window created at x={x}");
+            Ok(())
+        }
+        Err(e) => {
+            logln!("panel window FAILED to build: {e}");
+            Err(e.to_string())
+        }
+    }
+}
+
+/// Which panel this window is, asked for by the page once it loads.
+#[tauri::command]
+fn cmd_panel_kind() -> String {
+    PANEL_KIND.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn cmd_close_panel(app: tauri::AppHandle) {
+    close_panel(&app);
+}
+
+pub fn close_panel(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("panel") {
+        let _ = w.close();
+    }
+    *PANEL_RECT.lock().unwrap() = None;
+}
+
+/// Turn the calling window into real blurred glass, and report whether it worked.
+///
+/// The page asks for this rather than Rust deciding, because only the page knows
+/// which theme it ended up in once "follow Windows" has been resolved. If this
+/// returns false the page keeps its painted translucency, so a machine where the
+/// composition attribute is unavailable still looks right.
+#[tauri::command]
+fn cmd_glass(window: tauri::Window, dark: bool) -> bool {
+    let Ok(h) = window.hwnd() else {
+        return false;
+    };
+    let hwnd = h.0 as isize;
+    win::acrylic::round_corners(hwnd, win::acrylic::border_for(dark));
+    win::acrylic::enable(hwnd, win::acrylic::tint_for(dark))
 }
 
 #[tauri::command]
@@ -376,6 +555,14 @@ fn cmd_focus_foreground() {
 /// Height of the top bar strip in CSS pixels, mirrored from tauri.conf.json.
 const TOPBAR_CSS_HEIGHT: f64 = 42.0;
 
+/// How tall the top bar WINDOW is, in CSS pixels.
+///
+/// Much taller than the bar itself: the island expands downward into this space, and
+/// a transparent window clips anything drawn outside its rect. None of it is
+/// clickable - the hit-test region is still only the pills - so the extra height
+/// costs nothing, and it avoids resizing a window mid-animation.
+const TOPBAR_WINDOW_CSS_HEIGHT: f64 = 190.0;
+
 /// Reserve screen space for whichever bars are permanently visible.
 ///
 /// Registers a real appbar rather than writing the work area directly: the shell
@@ -413,9 +600,14 @@ fn position_topbar(app: &tauri::AppHandle) -> tauri::Result<()> {
     };
     let (sw, _) = win::taskbar::screen_size();
     let scale = bar.scale_factor().unwrap_or(1.0);
-    let h = (56.0 * scale).round() as i32;
+    let h = (TOPBAR_WINDOW_CSS_HEIGHT * scale).round() as i32;
     bar.set_size(tauri::PhysicalSize::new(sw as u32, h as u32))?;
     bar.set_position(tauri::PhysicalPosition::new(0, 0))?;
+    // The sampler needs the height of the BAR, not of the window, to decide whether
+    // the pointer is still on it - the window is mostly empty space the island
+    // expands into. It must never ask the window for this from its own thread
+    // (see autohide.rs).
+    autohide::TOPBAR_HEIGHT.store((56.0 * scale).round() as i32, Ordering::SeqCst);
     Ok(())
 }
 
@@ -486,6 +678,9 @@ struct SystemPrefs {
     magnification: bool,
     always_visible: bool,
     icon_size: u32,
+    topbar_auto_hide: bool,
+    topbar_app_pill: bool,
+    island: bool,
 }
 
 #[tauri::command]
@@ -500,6 +695,9 @@ fn cmd_system_prefs() -> SystemPrefs {
         magnification: s.dock_magnification,
         always_visible: s.dock_always_visible,
         icon_size: s.dock_icon_size,
+        topbar_auto_hide: s.topbar_auto_hide,
+        topbar_app_pill: s.topbar_app_pill,
+        island: s.island,
     }
 }
 
@@ -615,6 +813,12 @@ fn cmd_dock_revealed() -> bool {
     autohide::REVEALED.load(Ordering::SeqCst)
 }
 
+/// The same for the top bar.
+#[tauri::command]
+fn cmd_topbar_revealed() -> bool {
+    autohide::TOPBAR_REVEALED.load(Ordering::SeqCst)
+}
+
 /// Quit, always putting Windows back first.
 #[tauri::command]
 fn cmd_app_quit(app: tauri::AppHandle) {
@@ -704,7 +908,10 @@ fn open_settings(app: &tauri::AppHandle) -> tauri::Result<()> {
     .resizable(false)
     .decorations(false)
     .transparent(true)
-    .shadow(false)
+    // A real DWM drop shadow around the window's rounded region, rather than one
+    // painted inside the page: a painted shadow needs margin inside the window,
+    // and acrylic would fill that margin with glass.
+    .shadow(true)
     .center()
     .additional_browser_args(BROWSER_ARGS)
     .build()?;
@@ -850,6 +1057,15 @@ fn cmd_widget_data() -> WidgetData {
     }
 }
 
+/// Album art for the track the island is showing, as a data URL.
+///
+/// Separate from `cmd_status` because it is tens of kilobytes: the island asks for
+/// it only when the title it is displaying has changed.
+#[tauri::command]
+fn cmd_media_art() -> Option<String> {
+    win::media::art()
+}
+
 /// "toggle", "next" or "previous", handed to Windows' own media session.
 #[tauri::command]
 fn cmd_media_control(action: String) {
@@ -946,6 +1162,7 @@ fn apply_settings(app: &tauri::AppHandle, initial: bool) {
     // This is the only place the dock's "always visible" setting reaches the
     // sampler; before PHASE 6 it was stored and then never read.
     autohide::ALWAYS_VISIBLE.store(s.dock_always_visible, Ordering::SeqCst);
+    autohide::TOPBAR_AUTO_HIDE.store(s.topbar_auto_hide, Ordering::SeqCst);
 
     for (label, enabled) in [("dock", s.dock_enabled), ("topbar", s.topbar_enabled)] {
         let Some(w) = app.get_webview_window(label) else {

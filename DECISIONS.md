@@ -351,3 +351,101 @@ clicking pause, the foreground window is the one it was before.
 
 A drag has a 4px threshold for the same reason - a plain click on a card must not
 nudge the layout.
+
+---
+
+## D-022 — The top bar's controls open our own panels, not Windows' flyouts
+**Date:** 2026-10-31 · **Phase:** feedback
+
+The brief originally required that clicking Wi-Fi, Bluetooth, volume or the clock open
+*the same* Windows flyout, and PHASE 2 did exactly that. In use it reads as a bug: the
+Windows panel opens down by the taskbar, nowhere near the bar that was clicked. You
+asked for the options to "open there itself".
+
+**Decision:** our own panels, anchored under the pill. They are not pictures of the
+Windows ones — the Wi-Fi and Bluetooth switches drive the real radios through
+`Windows.Devices.Radios`, and the slider drives the real audio endpoint. Everything
+deliberately **not** duplicated (choosing a network, pairing a device, power plans) is
+one button away on the matching Windows settings page, so nothing becomes unreachable.
+
+This is a deliberate departure from the original core rule, made because you asked for
+it after seeing the first version.
+
+---
+
+## D-023 — Real acrylic for panels, painted glass for bars
+**Date:** 2026-10-31 · **Phase:** feedback
+
+`backdrop-filter` cannot blur the desktop through a transparent window (D-009), so
+"glass" had been painted translucency. `SetWindowCompositionAttribute` gives real
+blur, and `DWMWA_WINDOW_CORNER_PREFERENCE` rounds the window so the blur is clipped to
+a rounded shape — `SetWindowRgn` does **not** work for this, because DWM composites
+the acrylic against the window *rectangle* and ignores the region (measured: a region
+with 21px corners produced perfectly square ones).
+
+**Decision:** acrylic on the settings window and the panels, which are whole windows
+and can be rounded by DWM. The dock, top bar and widgets keep painted glass, because
+their windows hold several separate islands and a window-wide blur would fill the gaps
+between them.
+
+Both are undocumented attributes, looked up at runtime and ignored if missing, so a
+machine without them keeps the painted surfaces and stays readable.
+
+---
+
+## D-024 — The top bar hides itself, and reserves nothing
+**Date:** 2026-10-31 · **Phase:** feedback
+
+A permanently visible bar has to reserve its strip, and maximised windows then stop
+below it. You asked for windows to use the whole screen.
+
+**Decision:** auto-hide is now the default. The bar slides away and comes back when
+the pointer touches the top edge, exactly mirroring the dock at the bottom, and it
+reserves nothing — maximised windows get every pixel. While it is away its hit-test
+region is emptied, so the top strip behaves like bare screen. It is held down while
+one of its panels is open, because a bar sliding out from under an open flyout looks
+like a fault.
+
+The old behaviour is one switch away in settings.
+
+---
+
+## D-025 — Shadows are sized to the hit-test region
+**Date:** 2026-10-31 · **Phase:** feedback
+
+Every surface here lives inside a `SetWindowRgn` region so clicks pass through the
+gaps. The region was a **rectangle** two pixels bigger than the card, which cut the
+corners off a rounded card and left its shadow behind as four hard corners — the thing
+you described as "very sharp at the corners".
+
+**Decision:** regions are rounded rectangles, inflated by exactly how far the shadow
+can reach, with a corner radius to match. The shadow itself was retuned so that reach
+is 18px rather than 68px, because the inflated region is clickable area that the
+desktop underneath loses. `--shadow-reach` in `theme.css` and `PAD` in the frontend
+are the same number and have to stay that way.
+
+---
+
+## D-026 — The island, and why it is not a notch
+**Date:** 2026-10-31 · **Phase:** feedback
+
+You asked for Alcove's Dynamic Island behaviour on Windows.
+
+**Decision:** the top bar's centre pill *is* the island. Collapsed it is the clock;
+hovering expands it to what is playing, with artwork, title and transport controls;
+and it expands on its own for a few seconds when the volume changes, the charger goes
+in or out, or the track changes.
+
+Two implementation notes worth keeping:
+
+- The top bar **window** is 190px tall while the bar itself is 56px. The island
+  expands into that empty space, so growing it is a CSS transition rather than a Win32
+  window resize — resizing a window every frame is exactly what makes this kind of UI
+  stutter. None of the empty space is clickable.
+- While the island is open its region is set to its **full footprint** rather than its
+  measured one. The region has to be sent the moment the state changes, and measuring
+  then returns the collapsed size, which clipped the body away as it grew.
+
+Not built from Alcove: the file shelf (drag files onto the island to park them),
+clipboard history, camera mirror and timers. They are separate features rather than
+variations on this one.

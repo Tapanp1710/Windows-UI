@@ -10,6 +10,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
+import { initIsland, isOpen as islandOpen, paint as paintIsland, setIslandEnabled, setOnStateChange } from "./island";
 import "../shared/theme.css";
 import "./topbar.css";
 
@@ -170,21 +172,53 @@ function renderStatus(s: Status): void {
  */
 let lastRegions = "";
 
+/**
+ * How far outside a pill the region reaches, in CSS px.
+ *
+ * Must match --shadow-reach in theme.css: it is exactly how far the shadow can
+ * extend, so the region contains the whole fade and clips nothing visible.
+ */
+const PAD = 18;
+
+/** Mirrors the Rust sampler. Starts concealed, like the markup. */
+let revealed = false;
+
 async function syncRegions(): Promise<void> {
   await new Promise(requestAnimationFrame);
-  const rects = [appPill, clockPill, statusPill]
-    .filter((el) => !el.hidden && el.offsetWidth > 0)
-    .map((el) => {
-      const r = el.getBoundingClientRect();
-      // Grow by a couple of px so the region never clips the pill's own
-      // antialiased rounded corners or its shadow.
-      return {
-        x: Math.floor(r.left) - 2,
-        y: Math.floor(r.top) - 2,
-        w: Math.ceil(r.width) + 4,
-        h: Math.ceil(r.height) + 4,
-      };
-    });
+  // Nothing is clickable while the bar is away, so the top strip of the screen
+  // behaves exactly like bare screen.
+  // The island is measured as a whole, so when it expands the clickable area
+  // follows it down over the body; collapsed, its box is just the pill.
+  const parts: Array<[HTMLElement, number | null]> = [
+    [appPill, null],
+    [islandEl, islandOpen() ? 18 : null],
+    [statusPill, null],
+  ];
+
+  const rects = !revealed
+    ? []
+    : parts
+        .filter(([el]) => !el.hidden && el.offsetWidth > 0)
+        .map(([el, radius]) => {
+          // While the island is open its box is measured MID-TRANSITION, because the
+          // region has to be sent the moment the state changes. Measuring then gives
+          // the collapsed size and the region clips the body away as it grows. So an
+          // open island reserves its full footprint instead of its current one.
+          const r =
+            el === islandEl && islandOpen()
+              ? islandFootprint()
+              : el.getBoundingClientRect();
+          // Inflated by the shadow's reach, with a matching corner radius: a region
+          // tight to the pill clips the shadow into four hard corners, which is
+          // what made these look like sharp slabs rather than floating islands.
+          return {
+            x: Math.floor(r.left) - PAD,
+            y: Math.floor(r.top) - PAD,
+            w: Math.ceil(r.width) + PAD * 2,
+            h: Math.ceil(r.height) + PAD * 2,
+            r: (radius ?? Math.round(r.height / 2)) + PAD,
+          };
+        });
 
   const sig = JSON.stringify(rects);
   if (sig === lastRegions) return;
@@ -194,13 +228,28 @@ async function syncRegions(): Promise<void> {
 
 /* ----------------------------------------------------------- interaction */
 
-// All four status controls open the same Windows Quick Settings panel the taskbar
-// does, exactly as the brief requires.
-for (const el of [netBtn, btBtn, volBtn, battBtn]) {
-  el.addEventListener("click", () => void invoke("cmd_open_quick_settings"));
+/**
+ * Open one of our own panels, centred under the pill that was clicked.
+ *
+ * Windows' own flyouts open down by the taskbar, nowhere near the bar you pressed.
+ * These appear where the click was. Everything they do not duplicate - choosing a
+ * network, pairing a device - is one button away on the real Windows page.
+ */
+function openPanel(kind: string, anchor: HTMLElement, width: number, height: number): void {
+  const r = anchor.getBoundingClientRect();
+  void invoke("cmd_open_panel", {
+    kind,
+    anchorX: r.left + r.width / 2,
+    width,
+    height,
+  });
 }
 
-clockPill.addEventListener("click", () => void invoke("cmd_open_notifications"));
+for (const el of [netBtn, btBtn, volBtn, battBtn]) {
+  el.addEventListener("click", () => openPanel("quick", statusPill, 330, 252));
+}
+
+clockPill.addEventListener("click", () => openPanel("calendar", clockPill, 272, 348));
 
 chevron.addEventListener("click", () => void invoke("cmd_open_tray_overflow"));
 
@@ -253,15 +302,42 @@ async function applyPrefs(): Promise<void> {
       iconShape: string;
       theme: string;
       animationSpeed: number;
+      topbarAppPill: boolean;
+      island: boolean;
     }>("cmd_system_prefs");
     const root = document.documentElement;
     root.dataset.animations = p.animations ? "on" : "off";
     root.dataset.iconShape = p.iconShape || "circle";
     if (p.theme === "light" || p.theme === "dark") root.dataset.theme = p.theme;
+    else delete root.dataset.theme;
     root.style.setProperty("--anim-scale", p.animations ? String(p.animationSpeed) : "0");
+
+    appPill.hidden = !p.topbarAppPill;
+    setIslandEnabled(p.island);
+    lastRegions = "";
   } catch {
     /* defaults in CSS are fine */
   }
+}
+
+const barEl = document.getElementById("bar") as HTMLDivElement;
+const islandEl = document.getElementById("island") as HTMLDivElement;
+
+/** The island's widest, tallest shape. Must cover `.island-body` in topbar.css. */
+const ISLAND_W = 304 + 24;
+const ISLAND_H = 150;
+
+function islandFootprint(): DOMRect {
+  const pill = clockPill.getBoundingClientRect();
+  const cx = pill.left + pill.width / 2;
+  return new DOMRect(cx - ISLAND_W / 2, pill.top, ISLAND_W, ISLAND_H);
+}
+
+function setRevealed(next: boolean): void {
+  if (next === revealed) return;
+  revealed = next;
+  barEl.classList.toggle("hidden", !next);
+  void syncRegions();
 }
 
 async function refresh(): Promise<void> {
@@ -269,6 +345,7 @@ async function refresh(): Promise<void> {
     const s = await invoke<Status>("cmd_status");
     if (pendingVolume === null) currentVolume = s.volume.level;
     renderStatus(s);
+    paintIsland(s as never);
     await syncRegions();
   } catch (err) {
     console.error("top bar refresh failed", err);
@@ -276,6 +353,13 @@ async function refresh(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  initIsland(true);
+  // The region has to be re-sent the moment the island grows or shrinks, or the
+  // body would be drawn outside the clickable area and swallow nothing.
+  setOnStateChange(() => {
+    lastRegions = "";
+    void syncRegions();
+  });
   await applyPrefs();
   tickClock();
   await refresh();
@@ -293,7 +377,25 @@ async function main(): Promise<void> {
   scheduleClock();
 
   window.setInterval(() => void refresh(), REFRESH_MS);
+
+  try {
+    await listen("topbar:reveal", () => setRevealed(true));
+    await listen("topbar:conceal", () => setRevealed(false));
+  } catch (e) {
+    await invoke("cmd_log", { msg: `topbar listen() FAILED, auto-hide disabled: ${e}` });
+  }
+  // Sync to the sampler's real state: anything emitted before this page attached
+  // its listeners is gone, which once left the dock stuck concealed (D-011).
+  try {
+    setRevealed(await invoke<boolean>("cmd_topbar_revealed"));
+  } catch {
+    /* keep the concealed default */
+  }
+
   await getCurrentWindow().show();
+  // Transitions on only after the concealed start state has been painted, so the
+  // bar does not animate a slide nobody asked for.
+  requestAnimationFrame(() => barEl.classList.remove("no-anim"));
 }
 
 void main();
