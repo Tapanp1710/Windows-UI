@@ -92,7 +92,11 @@ interface Status {
   battery: { percent: number | null; charging: boolean; present: boolean };
   volume: { level: number; muted: boolean; available: boolean };
   network: { connected: boolean; internet: boolean };
+  ssid: string | null;
 }
+
+/** The joined network, for the Wi-Fi tile's sub-label. */
+let ssid: string | null = null;
 
 /* ------------------------------------------------------------------ glass */
 
@@ -127,6 +131,7 @@ function tileState(t: Tile): { on: boolean; enabled: boolean; sub: string } {
   }
   const r = radios.find((x) => x.kind === t.id);
   if (!r) return { on: false, enabled: false, sub: "Not available" };
+  if (t.id === "wifi" && r.on && ssid) return { on: true, enabled: r.canToggle, sub: ssid };
   return { on: r.on, enabled: r.canToggle, sub: r.on ? "On" : "Off" };
 }
 
@@ -235,6 +240,11 @@ async function refreshStatus(): Promise<void> {
     return;
   }
 
+  if (s.ssid !== ssid) {
+    ssid = s.ssid;
+    paintTiles();
+  }
+
   const vol = $<HTMLInputElement>("vol");
   if (document.activeElement !== vol) vol.value = String(s.volume.level);
   $("vol-out").textContent = `${s.volume.level}%`;
@@ -329,6 +339,67 @@ function renderCalendar(): void {
   }
 }
 
+/* ----------------------------------------------------------------- shelf */
+
+interface ShelfItem {
+  id: string;
+  name: string;
+  kind: string;
+  icon: string | null;
+}
+
+const KIND_ICON: Record<string, string> = {
+  folder: SVG(`<path d="M3 7.5a2 2 0 0 1 2-2h4l2 2.2h8a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>`),
+  file: SVG(`<path d="M6 3.5h8l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-16a1 1 0 0 1 1-1z"/><path d="M14 3.5v4h4"/>`),
+  image: SVG(`<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4.5 17 4.5-4.5 3.5 3.5 2.5-2.5 4.5 4.5"/>`),
+};
+
+async function renderShelf(): Promise<void> {
+  const items = await invoke<ShelfItem[]>("cmd_shelf").catch(() => []);
+  const grid = $("shelf-grid");
+  grid.textContent = "";
+  $<HTMLElement>("shelf-empty").hidden = items.length > 0;
+
+  for (const it of items) {
+    const chip = document.createElement("div");
+    chip.className = "chip";
+    chip.innerHTML = `
+      <span class="thumb">${it.icon ? `<img alt="" src="${it.icon}" />` : KIND_ICON[it.kind] ?? KIND_ICON.file}</span>
+      <span>${it.name}</span>
+      <button class="drop-x" type="button" aria-label="Remove ${it.name}">×</button>`;
+
+    chip.addEventListener("click", async (e) => {
+      if ((e.target as HTMLElement).classList.contains("drop-x")) {
+        await invoke("cmd_shelf_remove", { id: it.id });
+        await renderShelf();
+        return;
+      }
+      await invoke("cmd_shelf_open", { id: it.id });
+      await invoke("cmd_close_panel");
+    });
+
+    // Dragging a chip out hands the real path to Explorer through an OLE drag in
+    // Rust; a web view cannot hand a filesystem path to a native drop target.
+    chip.addEventListener("pointerdown", (down) => {
+      if (down.button !== 0) return;
+      const start = { x: down.clientX, y: down.clientY };
+      const move = (m: PointerEvent) => {
+        if (Math.hypot(m.clientX - start.x, m.clientY - start.y) < 6) return;
+        cleanup();
+        void invoke("cmd_shelf_drag_out", { ids: [it.id] });
+      };
+      const cleanup = () => {
+        document.removeEventListener("pointermove", move);
+        document.removeEventListener("pointerup", cleanup);
+      };
+      document.addEventListener("pointermove", move);
+      document.addEventListener("pointerup", cleanup);
+    });
+
+    grid.appendChild(chip);
+  }
+}
+
 /* -------------------------------------------------------------- startup */
 
 async function main(): Promise<void> {
@@ -350,7 +421,10 @@ async function main(): Promise<void> {
 
   await applyGlass();
 
-  if (kind === "calendar") {
+  if (kind === "shelf") {
+    $("shelf").hidden = false;
+    await renderShelf();
+  } else if (kind === "calendar") {
     $("calendar").hidden = false;
     renderCalendar();
     $("open-notifications").addEventListener("click", async () => {

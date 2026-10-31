@@ -716,3 +716,103 @@ the stamp and are on the machine that wrote them.
 The same change dropped a committed `__pycache__/*.pyc` and added the README a clone
 needs in order to build at all: the GNU Rust target and a portable MinGW at the exact
 path `scripts\env.ps1` expects are not guessable from the source.
+
+---
+
+## D-038 — Why the top bar took a second to appear
+**Date:** 2026-10-31 · **Phase:** one bar at the bottom
+
+The dock appeared the instant the pointer touched the bottom edge. The top bar took
+about a second for the same gesture. Same sampler, same 20ms poll, same 150ms
+animation — so the difference was not in Rust.
+
+`setRevealed` in the dock toggles a CSS class and stops. The top bar's also called
+`syncRegions()`, and that begins with `await new Promise(requestAnimationFrame)`. The
+top bar is a transparent window clipped to a hit-test region, and while concealed that
+region is **empty** — so the window is not composited, and a surface that is not
+composited has its animation frames throttled to roughly one a second. The bar could
+not become clickable, or visible, until that frame arrived.
+
+**Decision:** the bar moved into the dock's pill instead of being patched. The dock
+window is sized to its content, so a tray inside it needs no region at all, and
+nothing in the reveal path waits on a frame. The underlying trap is worth stating on
+its own: **never put `requestAnimationFrame` on the path that makes a window visible**,
+because a hidden window is exactly where rAF stops being 16ms.
+
+---
+
+## D-039 — One bar, at the bottom
+**Date:** 2026-10-31 · **Phase:** one bar at the bottom
+
+Two bars on opposite edges meant two clocks, two routes to the same controls, and a
+screen pinched at both ends. The taskbar is at the bottom on Windows and that is where
+the hand goes.
+
+**Decision:** network, Bluetooth, sound, battery, the clock and the shelf moved into
+the right-hand end of the dock's own pill, behind a divider. The dock keeps its
+design; the tray is the same glass, the same radius, the same auto-hide. Flyouts open
+**upward** (`cmd_open_panel`'s `above`), because a flyout has to grow away from the
+edge its bar is on.
+
+The top bar is now **off by default**, not deleted — the switch in settings still
+brings it back for anyone who wants it, and `topbar_enabled` is read by the page
+itself before it does anything. That last part matters: the window is created by
+`tauri.conf.json` whether it is wanted or not, so a page left running polls
+`cmd_status` every two seconds forever behind a window nobody can see. It now returns
+immediately. That alone was 55 MB and half the main thread's COM traffic.
+
+---
+
+## D-040 — `cmd_status` was the last thing waiting on the main thread
+**Date:** 2026-10-31 · **Phase:** one bar at the bottom
+
+D-033 moved the radios and the launcher's file walk off the main thread and missed
+this one. `cmd_status` is synchronous, and it built **two COM objects per call** —
+`MMDeviceEnumerator` for the volume and `NetworkListManager` for connectivity, whose
+`GetConnectivity` talks to the network service and is not reliably fast.
+
+The dock asks for status every two seconds. The hidden top bar was asking too. The
+process went to `Responding=False` and the event log recorded `AppHangB1` again at
+22:09, on the build before this one.
+
+**Decision:** the same shape as `media`, `radios` and `brightness` — a background
+thread holds the COM reads and `volume()`/`network()` return the last snapshot.
+Battery and foreground window stay live, because `GetSystemPowerStatus` and
+`GetForegroundWindow` are plain Win32 with no cross-process round trip.
+`cmd_set_volume` became async and seeds the snapshot so the slider does not spring
+back before the next poll.
+
+The rule from D-033, now applied everywhere it belongs: **a synchronous command may
+compute, but it may never wait.**
+
+---
+
+## D-041 — Mac-style window buttons on other apps' windows: not done, and why
+**Date:** 2026-10-31 · **Phase:** one bar at the bottom
+
+The ask was to restyle minimise / maximise / close on **every** window to look like
+macOS, keeping them on the right.
+
+Those buttons belong to each application. A desktop app either lets DWM draw its
+caption or draws its own — VS Code, Brave, Discord and Spotify all draw their own, and
+most of the dock here is apps that do. Restyling them from outside means one of two
+things, and both break something the brief protects:
+
+- **Injecting a DLL into every process** to hook its painting. That is the technique,
+  and it is also the technique malware uses; it would need to defeat anti-cheat and
+  protected processes, and it cannot touch anything running as administrator from a
+  non-elevated app.
+- **Covering the real buttons with an always-on-top overlay** and forwarding clicks as
+  `WM_SYSCOMMAND`. This is feasible, and it still breaks real behaviour: hovering the
+  maximise button is how **Snap Layouts** appear, and an overlay swallows that hover.
+  It also has to guess where each app drew its buttons, which for custom title bars
+  means landing on the wrong pixels; and it cannot cover elevated windows at all.
+
+The brief's own rule covers this: *"If something cannot be restyled without changing
+behavior, leave it as standard Windows and record it in the final report."* So it is
+recorded, not faked.
+
+**What is available instead**, if wanted: the overlay version, opt-in, with Snap
+Layouts lost on the maximise button and a per-app allowlist for apps that draw their
+own caption. That is a real feature with a real cost, and it is the user's call rather
+than something to slip in.

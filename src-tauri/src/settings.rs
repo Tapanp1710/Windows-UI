@@ -109,7 +109,12 @@ impl Default for Settings {
             pinned: Vec::new(),
             pins_imported: false,
             dock_enabled: true,
-            topbar_enabled: true,
+            // Off. Everything it carried - network, Bluetooth, sound, battery, the
+            // clock and the shelf - now lives in the dock's own tray, so there is
+            // one bar at the bottom rather than two on opposite edges. The top bar
+            // is kept, and the switch in settings still brings it back, but having
+            // both on means two clocks and two sets of the same controls.
+            topbar_enabled: false,
             // On by default. A permanently visible bar has to reserve its strip,
             // which stops maximised windows using the whole screen; auto-hiding
             // gives every pixel back and the bar is one pointer-flick away.

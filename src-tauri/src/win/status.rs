@@ -51,7 +51,7 @@ pub struct Volume {
 }
 
 /// Read the default playback device's master volume through the Core Audio API.
-pub fn volume() -> Volume {
+fn volume_live() -> Volume {
     use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
     use windows::Win32::Media::Audio::{eMultimedia, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
     use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
@@ -125,7 +125,7 @@ pub struct Network {
 /// Signal strength and SSID need the WLAN API (`wlanapi.dll`), which is a larger
 /// surface; the bar shows a generic Wi-Fi glyph when connected wirelessly. Recorded
 /// as a known limitation rather than faking a bar level.
-pub fn network() -> Network {
+fn network_live() -> Network {
     use windows::core::Interface;
     use windows::Win32::Networking::NetworkListManager::{
         INetworkListManager, NetworkListManager, NLM_CONNECTIVITY_IPV4_INTERNET,
@@ -228,4 +228,56 @@ pub fn open_quick_settings() {
 /// Open the Windows calendar / notification centre (Win+N).
 pub fn open_notification_centre() {
     super::press_win_key('N');
+}
+
+
+/* ===========================================================================
+ * The status poller
+ *
+ * `volume_live` and `network_live` each build a COM object per call, and
+ * `INetworkListManager::GetConnectivity` talks to the network service - it is not
+ * reliably fast. `cmd_status` is a synchronous command, so every one of those calls
+ * landed on the main thread, and the dock asks for status every two seconds.
+ *
+ * That is the same mistake D-033 was about, in the one command that had not been
+ * moved yet: a synchronous command may compute, but it may never wait. So the COM
+ * reads happen on their own thread and `volume()` / `network()` return the last
+ * snapshot. Battery and foreground window stay live - they are plain Win32 calls
+ * with no cross-process round trip.
+ * =========================================================================== */
+
+static SNAP: std::sync::Mutex<Option<(Volume, Network)>> = std::sync::Mutex::new(None);
+
+/// Last known volume. Defaults until the first poll lands, about a second in.
+pub fn volume() -> Volume {
+    SNAP.lock().unwrap().as_ref().map(|(v, _)| v.clone()).unwrap_or_default()
+}
+
+pub fn network() -> Network {
+    SNAP.lock().unwrap().as_ref().map(|(_, n)| n.clone()).unwrap_or_default()
+}
+
+/// Put a just-set level into the snapshot so the slider does not spring back in the
+/// second before the next poll confirms it.
+pub fn note_volume(level: u8) {
+    let mut slot = SNAP.lock().unwrap();
+    if let Some((v, _)) = slot.as_mut() {
+        v.level = level;
+        v.muted = level == 0;
+    }
+}
+
+pub fn start() {
+    std::thread::spawn(|| {
+        use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        }
+        crate::logln!("status poller started");
+        loop {
+            let next = (volume_live(), network_live());
+            *SNAP.lock().unwrap() = Some(next);
+            std::thread::sleep(std::time::Duration::from_millis(1000));
+        }
+    });
 }

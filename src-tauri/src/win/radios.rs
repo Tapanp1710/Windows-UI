@@ -162,6 +162,8 @@ pub fn start() {
                 }
             }
 
+            *SSID.lock().unwrap() = read_ssid();
+
             if let Ok(next) = read() {
                 let mut slot = SNAPSHOT.lock().unwrap();
                 if slot.as_ref() != Some(&next) {
@@ -172,4 +174,29 @@ pub fn start() {
             std::thread::sleep(Duration::from_millis(2000));
         }
     });
+}
+
+/// The SSID of the Wi-Fi network currently joined, if any.
+///
+/// Kept beside the radio snapshot and refreshed by the same thread. The radio's own
+/// `name` is the adapter ("Wi-Fi"); this is the network you are actually on, which
+/// is what the Windows tile shows and what tells you at a glance which one you got.
+static SSID: Mutex<Option<String>> = Mutex::new(None);
+
+pub fn wifi_ssid() -> Option<String> {
+    SSID.lock().unwrap().clone()
+}
+
+/// `GetInternetConnectionProfile` answers for whatever is carrying the internet, so
+/// this returns None on Ethernet or with no connection - both correct.
+fn read_ssid() -> Option<String> {
+    use windows::Networking::Connectivity::NetworkInformation;
+    let profile = NetworkInformation::GetInternetConnectionProfile().ok()?;
+    let details = profile.WlanConnectionProfileDetails().ok()?;
+    let ssid = details.GetConnectedSsid().ok()?.to_string();
+    if ssid.is_empty() {
+        None
+    } else {
+        Some(ssid)
+    }
 }
