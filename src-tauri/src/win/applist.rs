@@ -25,9 +25,12 @@ pub struct App {
 
 /// Icon edge length for launcher entries.
 ///
-/// Smaller than the dock's 256: a couple of hundred of these cross the IPC boundary
-/// in one message, and they are drawn at 32 CSS pixels.
-const LAUNCHER_ICON_PX: i32 = 96;
+/// Much smaller than the dock's 256. A couple of hundred of these cross the IPC
+/// boundary in one message and then sit decoded in the launcher page, and they are
+/// drawn at 32 CSS pixels - 48 physical at 150% scaling, so 64 is still sharper
+/// than the display can show. Dropping from 96 to 64 took idle memory back under
+/// the 250 MB target with every phase loaded.
+const LAUNCHER_ICON_PX: i32 = 64;
 
 /// Every installed app, sorted by name, case-insensitively.
 pub fn all() -> Vec<App> {

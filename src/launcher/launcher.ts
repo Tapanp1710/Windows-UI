@@ -231,7 +231,10 @@ async function main(): Promise<void> {
   await applyGlass();
   await buildSidebar();
 
-  apps = await invoke<App[]>("cmd_launcher_apps");
+  // Deliberately NOT fetched here. This page exists from startup so that the Win
+  // key opens instantly, but the app list carries an icon per app - a couple of
+  // hundred of them - and holding that decoded in a page nobody has opened yet is
+  // idle memory spent on nothing. It is fetched the first time the launcher opens.
   showApps();
 
   searchEl.addEventListener("input", () => {

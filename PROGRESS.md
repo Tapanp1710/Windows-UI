@@ -3,9 +3,15 @@
 **Read this file first when resuming.**
 
 ## Current phase
-STEP 0, PHASE 1 (Dock), PHASE 2 (Top bar), PHASE 6 (Settings / startup / packaging),
-PHASE 5 (Desktop widgets) and PHASE 4 (Window switcher) are complete and verified.
-**PHASE 3 (Launcher) is the only one left.**
+**All six phases are built.** STEP 0, PHASE 1 (Dock), PHASE 2 (Top bar and island),
+PHASE 3 (Launcher), PHASE 4 (Window switcher), PHASE 5 (Desktop widgets) and PHASE 6
+(Settings / startup / packaging).
+
+**One thing is not verified**: the Win+<key> matrix. `scripts/winkey-matrix.ps1`
+sends every combination the brief lists and reports what Windows did. Run it when the
+machine is free — it takes the keyboard for about a minute. Until then the claim that
+Win+E, Win+R, Win+L and the rest are untouched rests on how the hook is built
+(D-029), not on evidence.
 
 ## Status summary
 
@@ -17,7 +23,7 @@ PHASE 5 (Desktop widgets) and PHASE 4 (Window switcher) are complete and verifie
 | PHASE 6 — Settings / startup / packaging | **DONE**, verified |
 | PHASE 5 — Desktop widgets | **DONE**, verified |
 | PHASE 4 — Window switcher | **DONE**, verified |
-| PHASE 3 — Launcher | **Not started** — last, by design (riskiest) |
+| PHASE 3 — Launcher | **DONE** — Win-key matrix not yet verified |
 
 ---
 
@@ -102,6 +108,20 @@ a recorded baseline instead of forcing "always visible".
 - The window spans the screen but its **clickable area is only the pills** (and the
   island's body while it is open), so clicks between them reach the app underneath.
 
+### Launcher (PHASE 3)
+- Opens on the **Win key** or the dock's Start button; either again, or Escape,
+  closes it. Real glass, DWM-rounded, system shadow.
+- **Every installed app** — 158 on this machine, Store apps included, each with its
+  real icon. It lists `shell:AppsFolder`, which is the shell's own list (D-030).
+- Search filters apps as you type and finds files in your folders through a bounded
+  walk: depth 3, 30 results, a 350ms budget.
+- Sidebar of folders; click one to browse it, click a folder in the results to go
+  deeper, right-click anything for "Open in File Explorer".
+- Sleep, restart, shut down and sign out.
+- **Only the Win key's release is ever touched**, and only when nothing else was
+  pressed while it was held — which is exactly the keystroke that opens Start. Every
+  Win+<key> combination reaches Windows by construction (D-029).
+
 ### Window switcher (PHASE 4)
 - **Alt+Tab** opens a centred glass bar with **live DWM previews** of every window —
   the real thing, updating, not screenshots.
@@ -167,9 +187,20 @@ a recorded baseline instead of forcing "always visible".
   taskbar returns, the user's original auto-hide setting is preserved, no orphans).
 - `restore-windows.ps1` recovers the taskbar even when the whole process tree is killed.
 
-### Performance (30 s idle, everything loaded, panels closed)
-- **Idle CPU: 0.21%** across 8 processes — target near-0%. **Met.**
-- **RAM: 229.3 MB private.** Target under 250 MB. **Met.**
+### Performance (idle, every phase loaded, panels closed)
+- **Idle CPU: ~0.2%** across 8 processes — target near-0%. **Met.**
+- **RAM: 242–246 MB private** over repeated fresh starts. Target under 250 MB. **Met**,
+  but with little room left.
+
+Getting there took two structural changes, both worth knowing:
+
+- **Every panel shares one WebView2 renderer** (D-020). Without that it was 258 MB
+  with only five windows.
+- **A window is a compositing surface whether it is showing or not.** The switcher
+  was created screen-sized so clicks outside would dismiss it; sizing it to its own
+  bar instead gave back 11–14 MB for a window that only ever occupies a strip down
+  the middle. The widget layer still has to be screen-sized, because its widgets
+  genuinely are spread across the screen.
 
 Working set overstates it badly, because Chromium's shared binaries are counted once
 per process; private bytes is the fair number.
@@ -280,11 +311,18 @@ These cost real time and are worth not rediscovering:
 ---
 
 ## Next step
-**PHASE 3 — the launcher.** The riskiest phase by design, and the reason it is last:
-the Win key has to open the launcher without breaking Win+E, Win+R, Win+D, Win+L,
-Win+I, Win+A, Win+N, Win+V, Win+Shift+S, Win+arrows or Win+number. Every one of those
-gets tested individually and recorded in TESTS.md, and if any of them breaks, Start
-stays on the Win key and it gets logged — which the brief explicitly allows.
+
+1. **Run `scripts/winkey-matrix.ps1`** when the machine is free. It is the one
+   outstanding verification, and it is the one that matters most.
+2. **Window stashing.** You asked to be able to park an open *window* on the island so
+   it drops out of Alt+Tab, and bring it back later. Files, folders and images are
+   done; windows are not. It needs hiding the window, remembering it, and restoring
+   it — the switcher already skips hidden windows, so that part is free.
+3. **The rest of the taskbar's settings in the top panel.** It has Wi-Fi, Bluetooth,
+   volume and battery today, each driving the real thing, plus links to the matching
+   Windows pages. Brightness, airplane mode and battery saver are the obvious next
+   ones.
+4. **Multi-monitor.** Untestable here; the code assumes one display in several places.
 
 For PHASE 4 and PHASE 3, the keyboard-hook rules agreed for this run:
 - If the hook fails, is not installed, or an elevated window has focus, Windows' own

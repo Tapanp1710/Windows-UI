@@ -60,10 +60,8 @@
         "label": "switcher",
         "url": "switcher.html",
         "title": "macui switcher",
-        "width": 1280,
-        "height": 720,
-        "x": 0,
-        "y": 0,
+        "width": 1200,
+        "height": 330,
         "resizable": false,
         "decorations": false,
         "transparent": true,
@@ -76,7 +74,8 @@
         "maximizable": false,
         "minimizable": false,
         "closable": false,
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --process-per-site --renderer-process-limit=1"
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --process-per-site --renderer-process-limit=1",
+        "center": true
       },
       {
         "label": "launcher",
