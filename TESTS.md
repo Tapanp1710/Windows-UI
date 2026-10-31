@@ -457,3 +457,18 @@ All run against the release build on 2026-10-31, by driving a real mouse pointer
 | L.4 | Account row in the footer | PASS | initial avatar and the signed-in name |
 | L.5 | Power menu | PASS | the four actions behind the power glyph instead of four loose text buttons - "Shut down" is no longer one stray click from "Sleep" |
 | L.6 | All 158 apps still listed with real icons | PASS | |
+
+## Portability — another machine (2026-10-31)
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| X.1 | Machine-specific paths in tracked files | PASS, after a fix | only docs and `scripts/env.sh`. `baseline-windows.json` held this machine's taskbar state and a wallpaper path under the user's profile — now untracked (D-037) |
+| X.2 | A baseline from another machine is refused | PASS | all three cases exercised: foreign stamp → falls back to the Windows default; this machine → accepted; unstamped older file → accepted |
+| X.3 | Both restore scripts still parse | PASS | `Parser::ParseFile`, no errors |
+| X.4 | Windows adapt to the real screen | PASS (by construction) | the top bar is resized to `screen_size()` at startup, the widget layer is created from it, and `scale_factor()` is read rather than assumed |
+| X.5 | Saved widget positions on a smaller screen | PASS (by construction) | every widget is re-clamped to the window on load |
+| X.6 | Build output excluded from the repo | PASS | `target/`, `node_modules/`, `dist/` ignored; 90 tracked files |
+| X.7 | A clone has instructions to build and install | PASS, after a fix | there was no README at all; added, with the toolchain paths `env.ps1` expects |
+| X.8 | Multi-monitor | **NOT SUPPORTED** | everything targets the primary monitor. Documented, not fixed |
+| X.9 | Windows 10 | **UNTESTED** | the acrylic and rounded-corner calls behave differently there, and the taskbar is a different window |
+| X.10 | WebView2 on the target machine | by construction | Windows 11 ships it; the NSIS installer falls back to Microsoft's bootstrapper, which needs an internet connection once |
