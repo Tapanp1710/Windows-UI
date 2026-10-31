@@ -483,7 +483,7 @@ All run against the release build on 2026-10-31, by driving a real mouse pointer
 | B.4 | Reveal is instant | PASS | the dock window is content-sized, so the tray needs no region and nothing waits on a frame |
 | B.5 | Clock does not wrap | FIXED | "6:45 PM" wrapped onto three lines and made the dock a head taller; `white-space: nowrap` |
 | B.6 | Flyouts open upward | PASS | `cmd_open_panel`'s `above`; verified by screenshot, panel sits above the dock |
-| B.7 | Wi-Fi tile shows the real network | PASS | **"brucy"**, from `GetInternetConnectionProfile().WlanConnectionProfileDetails` — matches the Windows tile |
+| B.7 | Wi-Fi tile shows the real network | PASS | the joined network's real SSID, from `GetInternetConnectionProfile().WlanConnectionProfileDetails` — matches the Windows tile |
 | B.8 | Every tile from the Windows panel present | PASS | Wi-Fi, Bluetooth, Airplane mode, Battery saver, Night light, Accessibility, Cast, Project, VPN, Mobile hotspot, Nearby sharing, brightness, volume, battery |
 | B.9 | Shelf reachable without the top bar | PASS | tray button with a count badge, opens a shelf panel; click opens, × removes, drag pulls the real file out |
 | B.10 | Files dropped on the dock park on the shelf | PASS (by construction) | the drop listener moved from the top bar to the dock; still needs a human hand to confirm |
@@ -552,7 +552,7 @@ All run against the release build on 2026-10-31, by driving a real mouse pointer
 | # | Test | Result | Notes |
 |---|---|---|---|
 | N.1 | Chevron opens the network list in the panel | PASS | no trip to the Settings app |
-| N.2 | The joined network is shown and marked | PASS | **brucy — Connected**, accent-filled, sorted first |
+| N.2 | The joined network is shown and marked | PASS | the joined network, shown **Connected**, accent-filled and sorted first |
 | N.3 | Signal strength | PASS | three arcs, dimmed above the reported level |
 | N.4 | Secured networks show a lock | PASS | |
 | N.5 | Duplicate SSIDs folded | PASS (by construction) | one row per SSID, strongest signal kept |
