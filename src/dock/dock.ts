@@ -53,6 +53,7 @@ interface SystemPrefs {
   animationSpeed: number;
   magnification: boolean;
   alwaysVisible: boolean;
+  iconSize: number;
 }
 
 const itemsEl = document.getElementById("items") as HTMLDivElement;
@@ -69,6 +70,7 @@ let prefs: SystemPrefs = {
   animationSpeed: 1,
   magnification: true,
   alwaysVisible: false,
+  iconSize: 44,
 };
 const nodes = new Map<string, HTMLDivElement>();
 
@@ -428,15 +430,15 @@ itemsEl.addEventListener("auxclick", (e) => {
 /**
  * Right-clicking the dock itself (not an icon) opens the app menu.
  *
- * This is the only reachable way to quit while the dock is running: the tray icon
- * lives in the notification area, which is part of the Windows taskbar we hide, so it
- * cannot be clicked until the top bar (PHASE 2) exposes the tray overflow.
+ * The tray icon carries the same menu, but it lives in the notification area, which
+ * is part of the Windows taskbar we hide - so this, and the top bar's own context
+ * menu, are the reachable copies while the UI layer is running.
  */
 dockEl.addEventListener("contextmenu", (e) => {
   if (itemFor(e.target)) return; // an icon handles its own menu
   e.preventDefault();
   void openMenu(dockEl, [
-    { label: "Settings…", action: () => {}, disabled: true },
+    { label: "Settings…", action: () => void invoke("cmd_open_settings") },
     { label: "Restart UI", action: () => void invoke("cmd_app_restart") },
     {
       label: "Quit (restores the Windows taskbar)",
@@ -553,6 +555,9 @@ function applyPrefs(p: SystemPrefs): void {
   if (p.theme === "light" || p.theme === "dark") root.dataset.theme = p.theme;
   else delete root.dataset.theme;
   root.style.setProperty("--anim-scale", p.animations ? String(p.animationSpeed) : "0");
+  // The icon-size setting existed from PHASE 1 but nothing read it until the
+  // settings window could change it.
+  root.style.setProperty("--dock-icon", `${p.iconSize}px`);
 }
 
 /** Only re-render when something actually changed, to keep idle CPU near zero. */

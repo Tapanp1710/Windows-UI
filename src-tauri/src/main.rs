@@ -7,13 +7,15 @@ mod dock_model;
 #[macro_use]
 mod log;
 mod settings;
+mod startup;
+mod wallpaper;
 mod watchdog;
 mod win;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
-use tauri::{Manager, WindowEvent};
+use tauri::{Emitter, Manager, WindowEvent};
 
 /// Taskbar state as it was before we touched anything, so the restore puts back the
 /// user's own setting rather than a guessed default.
@@ -128,6 +130,13 @@ fn main() {
             cmd_open_tray_overflow,
             cmd_set_volume,
             cmd_focus_foreground,
+            cmd_open_settings,
+            cmd_close_settings,
+            cmd_get_config,
+            cmd_patch_settings,
+            cmd_set_start_at_login,
+            cmd_set_wallpaper,
+            cmd_return_to_normal,
         ])
         .setup(|app| {
             if let Err(e) = build_tray(app.handle()) {
@@ -152,7 +161,18 @@ fn main() {
             );
             position_dock(app.handle())?;
             position_topbar(app.handle())?;
-            apply_work_area(app.handle());
+            apply_settings(app.handle(), true);
+
+            // With both bars switched off there would be no way left to reach the
+            // settings - the tray icon lives inside the taskbar we hide. Open the
+            // settings window instead of starting up invisible and unreachable.
+            let s = settings::load();
+            if !s.dock_enabled && !s.topbar_enabled {
+                logln!("both bars are disabled; opening settings so the UI stays reachable");
+                if let Err(e) = open_settings(app.handle()) {
+                    logln!("could not open the settings window: {e}");
+                }
+            }
             AUTOHIDE_RUNNING
                 .lock()
                 .unwrap()
@@ -328,7 +348,13 @@ fn apply_work_area(app: &tauri::AppHandle) {
     };
 
     if !settings.topbar_enabled || settings.topbar_auto_hide {
+        // Nothing to reserve. `appbar::release()` is a no-op unless an appbar was
+        // ever registered (see D-010); resetting the work area is what actually
+        // hands the strip back, and it must happen or a disabled top bar would
+        // leave a 63px dead band at the top of every maximised window.
         win::appbar::release();
+        RESERVED_TOP.store(0, Ordering::SeqCst);
+        win::taskbar::reset_work_area();
         return;
     }
 
@@ -362,6 +388,8 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
     use tauri::tray::TrayIconBuilder;
 
+    let settings_item =
+        MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let restart = MenuItem::with_id(app, "restart", "Restart UI", true, None::<&str>)?;
     let normal = MenuItem::with_id(
         app,
@@ -372,7 +400,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     )?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&restart, &normal, &sep, &quit])?;
+    let menu = Menu::with_items(app, &[&settings_item, &restart, &normal, &sep, &quit])?;
 
     TrayIconBuilder::with_id("macui-tray")
         .icon(
@@ -384,15 +412,17 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
+            "settings" => {
+                if let Err(e) = open_settings(app) {
+                    logln!("could not open the settings window: {e}");
+                }
+            }
             "quit" => {
                 restore_windows_state();
                 app.exit(0);
             }
             "normal" => {
-                // Same code path as a crash restore and as restore-windows.ps1:
-                // put Windows back, then stand down.
-                restore_windows_state();
-                app.exit(0);
+                return_to_normal(app);
             }
             "restart" => {
                 restore_windows_state();
@@ -415,6 +445,7 @@ struct SystemPrefs {
     animation_speed: f64,
     magnification: bool,
     always_visible: bool,
+    icon_size: u32,
 }
 
 #[tauri::command]
@@ -428,6 +459,7 @@ fn cmd_system_prefs() -> SystemPrefs {
         animation_speed: s.animation_speed,
         magnification: s.dock_magnification,
         always_visible: s.dock_always_visible,
+        icon_size: s.dock_icon_size,
     }
 }
 
@@ -592,4 +624,186 @@ fn position_dock(app: &tauri::AppHandle) -> tauri::Result<()> {
         reposition(&dock.as_ref().window())?;
     }
     Ok(())
+}
+
+/* ------------------------------------------------------------------ PHASE 6
+ * Settings: one on-demand window, the tray menu, the startup entry, and the
+ * "return to normal Windows" button. Everything routes through the same
+ * `settings.json` the dock and top bar already read, and through the same
+ * `restore_windows_state()` the crash path uses.
+ */
+
+/// Open (or re-focus) the settings window.
+///
+/// It is built on demand rather than listed in `tauri.conf.json`, because every live
+/// window is a WebView2 renderer process: creating it only when asked keeps it out of
+/// the idle memory figure entirely.
+fn open_settings(app: &tauri::AppHandle) -> tauri::Result<()> {
+    if let Some(w) = app.get_webview_window("settings") {
+        let _ = w.unminimize();
+        w.show()?;
+        w.set_focus()?;
+        return Ok(());
+    }
+
+    // Created VISIBLE, unlike the dock and the top bar.
+    //
+    // Those two are shown by their own page once it has painted, to avoid a flash.
+    // Doing the same here was a bug: a window built hidden gets a WebView2 controller
+    // with IsVisible=false sized 0x0, so if anything in the page fails before its
+    // `show()` call the window is stranded invisible with no way to find out why.
+    // This window is transparent and paints nothing until the page is ready, so
+    // there is no flash to avoid in the first place.
+    let w = tauri::WebviewWindowBuilder::new(
+        app,
+        "settings",
+        tauri::WebviewUrl::App("settings.html".into()),
+    )
+    .title("macui settings")
+    .inner_size(480.0, 660.0)
+    .resizable(false)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .center()
+    .build()?;
+    logln!("settings window created");
+    // Focus is a courtesy, not a requirement: a failure here must not look like a
+    // failure to open the window.
+    if let Err(e) = w.set_focus() {
+        logln!("settings window could not take focus: {e}");
+    }
+    Ok(())
+}
+
+/// Deliberately `async`.
+///
+/// A synchronous command runs on the main thread *inside* the WebView2 callback that
+/// delivered the IPC message. Creating a second webview from there leaves the new
+/// controller half-created: the window appears, the child WebView2 widget is 0x0 and
+/// hidden, and nothing ever paints - with no error anywhere to explain it. Tauri
+/// documents this: window creation belongs in an async command, which runs off the
+/// main thread and dispatches the build properly.
+#[tauri::command]
+async fn cmd_open_settings(app: tauri::AppHandle) -> Result<(), String> {
+    open_settings(&app).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn cmd_close_settings(app: tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("settings") {
+        let _ = w.close();
+    }
+}
+
+/// Everything the settings window needs to draw itself.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConfigPayload {
+    settings: settings::Settings,
+    /// Read from the filesystem, not from `settings.json`: the shortcut's presence in
+    /// the Startup folder is the single source of truth, so deleting it by hand (or
+    /// disabling it in Task Manager) is reflected here rather than contradicted.
+    start_at_login: bool,
+    /// Whether we have a recorded wallpaper to put back.
+    wallpaper_changed: bool,
+    settings_path: String,
+    version: &'static str,
+}
+
+#[tauri::command]
+fn cmd_get_config() -> ConfigPayload {
+    logln!("settings window asked for the current configuration");
+    let s = settings::load();
+    ConfigPayload {
+        wallpaper_changed: s.original_wallpaper.is_some(),
+        start_at_login: startup::is_enabled(),
+        settings_path: settings::settings_path().to_string_lossy().to_string(),
+        version: env!("CARGO_PKG_VERSION"),
+        settings: s,
+    }
+}
+
+/// Merge a partial settings object into the stored one and apply it live.
+///
+/// A patch rather than a whole-object write: the settings window never sees `pinned`,
+/// and sending the whole struct back would let a window that has been open since
+/// before a drag-to-reorder silently undo it.
+#[tauri::command]
+fn cmd_patch_settings(app: tauri::AppHandle, patch: serde_json::Value) -> Result<(), String> {
+    let incoming = patch.as_object().ok_or("the patch must be an object")?;
+    let mut current = serde_json::to_value(settings::load()).map_err(|e| e.to_string())?;
+    let map = current
+        .as_object_mut()
+        .ok_or("settings did not serialise to an object")?;
+    for (k, v) in incoming {
+        map.insert(k.clone(), v.clone());
+    }
+    let next: settings::Settings = serde_json::from_value(current).map_err(|e| e.to_string())?;
+    settings::save(&next).map_err(|e| e.to_string())?;
+    apply_settings(&app, false);
+    Ok(())
+}
+
+/// The full "undo everything" path, shared by the tray item and the settings button.
+///
+/// This is deliberately more than Quit: quitting leaves a wallpaper the user chose
+/// deliberately in place, whereas "return to normal Windows" means the machine looks
+/// exactly as it did before any of this ran - the same promise `restore-windows.ps1`
+/// makes.
+fn return_to_normal(app: &tauri::AppHandle) {
+    if settings::load().original_wallpaper.is_some() {
+        wallpaper::set(app, "restore");
+    }
+    restore_windows_state();
+    app.exit(0);
+}
+
+#[tauri::command]
+fn cmd_return_to_normal(app: tauri::AppHandle) {
+    return_to_normal(&app);
+}
+
+#[tauri::command]
+fn cmd_set_start_at_login(enabled: bool) -> Result<bool, String> {
+    startup::set(enabled).map_err(|e| e.to_string())?;
+    // Report what is actually on disk now, not what was asked for.
+    Ok(startup::is_enabled())
+}
+
+/// `which` is "light", "dark" or "restore".
+#[tauri::command]
+fn cmd_set_wallpaper(app: tauri::AppHandle, which: String) -> bool {
+    wallpaper::set(&app, &which)
+}
+
+/// Push the current settings into the running UI.
+///
+/// `initial` is true during `setup()`, where the enabled windows must NOT be shown
+/// from here: each page shows itself once it has painted, and showing it early is a
+/// visible flash of an empty window.
+fn apply_settings(app: &tauri::AppHandle, initial: bool) {
+    let s = settings::load();
+
+    // This is the only place the dock's "always visible" setting reaches the
+    // sampler; before PHASE 6 it was stored and then never read.
+    autohide::ALWAYS_VISIBLE.store(s.dock_always_visible, Ordering::SeqCst);
+
+    for (label, enabled) in [("dock", s.dock_enabled), ("topbar", s.topbar_enabled)] {
+        let Some(w) = app.get_webview_window(label) else {
+            continue;
+        };
+        if enabled {
+            if !initial {
+                let _ = w.show();
+            }
+        } else {
+            let _ = w.hide();
+        }
+    }
+
+    apply_work_area(app);
+    // The dock and the top bar both re-read `cmd_system_prefs` on this event, so
+    // theme, icon shape and animation speed change without a restart.
+    let _ = app.emit("dock:prefs", ());
 }

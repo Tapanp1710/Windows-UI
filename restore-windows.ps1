@@ -7,9 +7,10 @@
     Safe to run at any time, as many times as you like. Needs NO administrator rights.
     Run it with:   powershell -ExecutionPolicy Bypass -File .\restore-windows.ps1
 
-    Kept in step with each phase. As of STEP 0 the UI layer does not yet touch any
-    Windows state, so the only things to restore are the app process and the taskbar
-    (defensively), plus the optional -RemoveToolchain cleanup.
+    Kept in step with each phase. As of PHASE 6 it restores: the app process, the
+    taskbar (visibility and the user's own auto-hide setting, from
+    baseline-windows.json), the desktop work area, the per-user startup shortcut and
+    the wallpaper - plus the optional -RemoveToolchain cleanup.
 #>
 
 [CmdletBinding()]
@@ -84,6 +85,9 @@ public class MacUiRestore {
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, ref RECT pvParam, uint fWinIni);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool SystemParametersInfoW(uint uiAction, uint uiParam, string pvParam, uint fWinIni);
+
     [DllImport("user32.dll")]
     public static extern int GetSystemMetrics(int nIndex);
 
@@ -93,6 +97,8 @@ public class MacUiRestore {
     public const int  ABS_ALWAYSONTOP = 0x0000002;   // visible, on top, NOT auto-hide
     public const int  SW_SHOW = 5;
     public const uint SPI_SETWORKAREA = 0x002F;
+    public const uint SPI_SETDESKWALLPAPER = 0x0014;
+    public const uint SPIF_UPDATEINIFILE = 0x01;
     public const uint SPIF_SENDCHANGE = 0x02;
     public const int  SM_CXSCREEN = 0;
     public const int  SM_CYSCREEN = 1;
@@ -119,6 +125,10 @@ public class MacUiRestore {
         if (tray != IntPtr.Zero) ShowWindow(tray, SW_SHOW);
         IntPtr sec = FindWindow("Shell_SecondaryTrayWnd", null);
         if (sec != IntPtr.Zero) ShowWindow(sec, SW_SHOW);
+    }
+
+    public static bool SetWallpaper(string path) {
+        return SystemParametersInfoW(SPI_SETDESKWALLPAPER, 0, path, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
     }
 
     // Hand the whole primary monitor back to Windows; the shell immediately
@@ -164,7 +174,7 @@ try {
 }
 
 # ---------------------------------------------------------------------------
-# 3. Remove the per-user startup entry, if PHASE 6 created one.
+# 3. Remove the per-user startup entry created by the settings window.
 # ---------------------------------------------------------------------------
 $startupLnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\macui.lnk'
 if (Test-Path $startupLnk) {
@@ -183,7 +193,35 @@ if (Test-Path $runKey) {
 }
 
 # ---------------------------------------------------------------------------
-# 4. Restart Explorer only if the taskbar window is genuinely gone.
+# 4. Put the user's own wallpaper back, if the settings window ever replaced it.
+#
+#    The app records the previous path in settings.json BEFORE changing anything,
+#    and clears it again once restored - so this is a no-op unless our wallpaper is
+#    currently in place. Nothing is deleted either way.
+# ---------------------------------------------------------------------------
+$settingsFile = Join-Path $env:APPDATA 'macui\settings.json'
+if (Test-Path $settingsFile) {
+    try {
+        $cfg = Get-Content $settingsFile -Raw -ErrorAction Stop | ConvertFrom-Json
+        $original = $cfg.originalWallpaper
+        if ($original) {
+            if ([MacUiRestore]::SetWallpaper([string]$original)) {
+                Note "wallpaper restored to $original"
+                # Clear the record so a second run does not fight a wallpaper the
+                # user has since chosen for themselves.
+                $cfg.originalWallpaper = $null
+                $cfg | ConvertTo-Json -Depth 8 | Set-Content $settingsFile -Encoding utf8
+            } else {
+                Write-Warning "could not restore the wallpaper; set it yourself in Settings > Personalisation"
+            }
+        }
+    } catch {
+        Write-Warning "could not read $settingsFile : $($_.Exception.Message)"
+    }
+}
+
+# ---------------------------------------------------------------------------
+# 5. Restart Explorer only if the taskbar window is genuinely gone.
 #    Explorer restarts itself and this loses nothing, but it reshuffles open
 #    File Explorer windows, so it is a last resort rather than routine.
 # ---------------------------------------------------------------------------
@@ -198,7 +236,7 @@ try {
 } catch {}
 
 # ---------------------------------------------------------------------------
-# 5. Optional: remove the STEP 0 toolchains (see SYSTEM_CHANGES.md T-1, T-2).
+# 6. Optional: remove the STEP 0 toolchains (see SYSTEM_CHANGES.md T-1, T-2).
 # ---------------------------------------------------------------------------
 if ($RemoveToolchain) {
     $rustup = "$env:USERPROFILE\.cargo\bin\rustup.exe"

@@ -58,6 +58,12 @@
 
   --tooltip-bg: rgba(252, 248, 243, 0.96);
   --divider: rgba(90, 70, 55, 0.18);
+
+  /* Opaque sibling of --glass-bg, for surfaces carrying a screenful of text.
+     Real desktop blur is not available behind a transparent window (D-009), so a
+     translucent panel shows whatever is underneath straight through its own words.
+     Fine for the dock, which you glance at; not fine for a settings window. */
+  --surface-solid: #fdfaf7;
 }
 
 /* Follow Windows' dark mode, unless settings forced light. */
@@ -81,6 +87,7 @@
 
     --tooltip-bg: rgba(44, 36, 31, 0.96);
     --divider: rgba(255, 240, 225, 0.16);
+    --surface-solid: #221b18;
   }
 }
 
@@ -101,6 +108,7 @@
   --running-dot: rgba(246, 236, 228, 0.70);
   --tooltip-bg: rgba(44, 36, 31, 0.96);
   --divider: rgba(255, 240, 225, 0.16);
+  --surface-solid: #221b18;
 }
 
 /* Windows "Show animations in Windows" off -> honour it everywhere at once. */

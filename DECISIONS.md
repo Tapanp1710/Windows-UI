@@ -176,3 +176,86 @@ too early and the dock stayed concealed until the user moved the pointer away an
 **Decision:** keep the events for liveness, but have the dock call `cmd_dock_revealed`
 once after attaching its listeners and sync to the real state. Events are a
 notification channel, not a source of truth.
+
+---
+
+## D-012 — The settings window is created on demand, not declared in the config
+**Date:** 2026-10-31 · **Phase:** 6
+
+Every live window is a separate WebView2 renderer process: measured, roughly 25 MB of
+private bytes and 60 MB of working set each. Declaring the settings window in
+`tauri.conf.json` alongside the dock and the top bar would have made that cost
+permanent, for a window that is open for a minute a month.
+
+**Decision:** build it at runtime in `open_settings()` and let closing it destroy it.
+Idle memory is unchanged by this phase (measured: 200.4 MB private, against 210.6 MB
+before it existed — i.e. inside the noise). The capability file already listed
+`settings` in its window list, so no permission change was needed.
+
+**Consequence worth knowing:** window creation must happen in an **async** command.
+A synchronous command runs on the main thread inside the WebView2 callback that
+delivered the IPC message, and creating a second webview from there leaves the new
+controller half-built — the window exists, its WebView2 child is 0x0 and hidden, and
+nothing ever paints, with no error anywhere. That cost an hour; it is now a comment on
+`cmd_open_settings`.
+
+---
+
+## D-013 — Startup entry is a Startup-folder shortcut, not a registry Run value
+**Date:** 2026-10-31 · **Phase:** 6
+
+Both are per-user and need no admin rights. `HKCU\...\Run` is one API call; the
+shortcut needs `IShellLinkW` + `IPersistFile`, which is about twenty more lines.
+
+**Decision:** the shortcut, for three reasons. It keeps the claim in
+SYSTEM_CHANGES.md that **this app writes no registry keys at all**, which is worth more
+than twenty lines. It is visible in Explorer and removable by deleting one file, so the
+user is not dependent on our settings window to undo it. And the presence of the file
+is the single source of truth, so disabling the entry in Task Manager or deleting it by
+hand is reflected in the settings window rather than contradicted by it.
+
+---
+
+## D-014 — The settings card is opaque, breaking the glass look on purpose
+**Date:** 2026-10-31 · **Phase:** 6
+
+`backdrop-filter` cannot blur the desktop through a transparent window (D-009), so
+every surface in this project is translucent over an *unblurred* background. At the
+dock's size that reads as glass. At a settings window's size it reads as a page of
+text with another application's text showing through it — verified by screenshot
+against a code editor, and plainly unusable.
+
+**Decision:** a new `--surface-solid` token, opaque, used by the settings card only.
+The border, radius, shadow and spacing are unchanged, so it still belongs to the same
+family. The brief's "glass surfaces" is a look for chrome you glance at, not a reason
+to make a window you have to read 12% transparent.
+
+---
+
+## D-015 — "Return to normal Windows" restores the wallpaper; "Quit" does not
+**Date:** 2026-10-31 · **Phase:** 6
+
+The wallpaper is the only persistent Windows setting this project changes, and only
+when the user presses a button asking for it.
+
+**Decision:** Quit is "stop the UI layer" and leaves a wallpaper the user deliberately
+chose. "Return to normal Windows" is "undo everything", and puts the recorded original
+back first. `restore-windows.ps1` does the same, reading the recorded path from
+`settings.json` and clearing it afterwards so a second run cannot fight a wallpaper the
+user has since chosen for themselves.
+
+---
+
+## D-016 — The tray icon is kept, and is not the primary route to settings
+**Date:** 2026-10-31 · **Phase:** 6
+
+The brief asks for a tray icon offering Settings / Restart UI / Quit. It exists and it
+works — but the notification area is part of the Windows taskbar this app hides, so
+while the UI layer is running the icon cannot be clicked. Making it reachable would
+mean implementing our own notification area, i.e. becoming the registered shell
+taskbar, which is the same wall as D-006.
+
+**Decision:** build the tray icon as asked (it is reachable if the app ever runs with
+the taskbar visible, e.g. when the watchdog fails to start and the app refuses to hide
+it), and give the identical menu two reachable homes: right-click the dock background,
+and right-click any top-bar pill. Nothing is lost and nothing is faked.

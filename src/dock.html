@@ -12,6 +12,11 @@
       function __report(kind, msg) {
         window.__diag.push(kind + ": " + msg);
         document.title = "macui dock [" + window.__diag.join(" | ").slice(0, 180) + "]";
+        // wry does not mirror document.title onto the native window, so the title
+        // above cannot be read from outside. The app's own log file can.
+        try {
+          window.__TAURI_INTERNALS__.invoke("cmd_log", { msg: "[dock] " + kind + ": " + msg });
+        } catch (e) {}
       }
       addEventListener(
         "error",
