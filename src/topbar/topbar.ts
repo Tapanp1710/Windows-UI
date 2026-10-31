@@ -396,6 +396,19 @@ async function wireDrops(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // Everything this bar carried - network, Bluetooth, sound, battery, the clock and
+  // the shelf - now lives in the dock's tray, so the bar is off by default. Bail out
+  // before anything is wired: the window is created by tauri.conf.json whether it is
+  // wanted or not, and a page left running polls `cmd_status` every two seconds
+  // forever behind a window nobody can see.
+  const enabled = await invoke<{ topbarEnabled: boolean }>("cmd_system_prefs")
+    .then((p) => p.topbarEnabled)
+    .catch(() => true);
+  if (!enabled) {
+    await invoke("cmd_log", { msg: "top bar is switched off; the dock's tray has it" });
+    return;
+  }
+
   initIsland(true);
   void wireDrops();
   // The region has to be re-sent the moment the island grows or shrinks, or the

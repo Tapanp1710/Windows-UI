@@ -264,6 +264,7 @@ fn main() {
             // Radios are polled on their own thread so no WinRT round trip ever
             // lands on the main thread. See D-033.
             win::radios::start();
+            win::status::start();
             win::brightness::start();
             switcher::start(app.handle().clone());
             launcher::warm_up();
@@ -337,6 +338,8 @@ struct StatusPayload {
     focused: win::status::FocusedApp,
     bluetooth: BluetoothStatus,
     media: win::media::NowPlaying,
+    /// The joined Wi-Fi network, or null on Ethernet / not connected.
+    ssid: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -356,6 +359,7 @@ fn cmd_status() -> StatusPayload {
         focused: win::status::focused_app(),
         bluetooth: BluetoothStatus { present, on },
         media: win::media::now_playing(),
+        ssid: win::radios::wifi_ssid(),
     }
 }
 
@@ -464,10 +468,12 @@ fn cmd_open_project() -> bool {
     win::pins::launch("DisplaySwitch.exe")
 }
 
-/// Open one of the top bar's panels, anchored under the pill that was clicked.
+/// Open one of the panels, anchored to the control that was clicked.
 ///
 /// `kind` is "quick" or "calendar". `anchor_x` is where the panel should be centred
 /// in CSS pixels; it is clamped so a panel near a screen edge stays on screen.
+/// `above` opens it upward from the bottom bar instead of downward from the top one -
+/// a flyout has to grow away from the edge its bar is on, or it opens off-screen.
 #[tauri::command]
 async fn cmd_open_panel(
     app: tauri::AppHandle,
@@ -475,20 +481,29 @@ async fn cmd_open_panel(
     anchor_x: f64,
     width: f64,
     height: f64,
+    above: Option<bool>,
 ) -> Result<(), String> {
     logln!("open panel '{kind}' anchored at {anchor_x} ({width}x{height})");
     // One panel at a time: opening the calendar should dismiss quick settings, the
     // way one Windows flyout replaces another.
     close_panel(&app);
 
-    let (sw, _) = win::taskbar::screen_size();
+    let (sw, sh) = win::taskbar::screen_size();
     let scale = app
-        .get_webview_window("topbar")
+        .get_webview_window("dock")
+        .or_else(|| app.get_webview_window("topbar"))
         .and_then(|w| w.scale_factor().ok())
         .unwrap_or(1.0);
     let logical_w = sw as f64 / scale;
+    let logical_h = sh as f64 / scale;
     let margin = 12.0;
     let x = (anchor_x - width / 2.0).clamp(margin, (logical_w - width - margin).max(margin));
+    // Clear of the dock, which is about 100 CSS px tall including its shadow pad.
+    let y = if above.unwrap_or(false) {
+        (logical_h - height - 104.0).max(margin)
+    } else {
+        52.0
+    };
     *PANEL_KIND.lock().unwrap() = kind.clone();
 
     let built = tauri::WebviewWindowBuilder::new(
@@ -498,7 +513,7 @@ async fn cmd_open_panel(
     )
     .title("macui panel")
     .inner_size(width, height)
-    .position(x, 52.0)
+    .position(x, y)
     .resizable(false)
     .decorations(false)
     .transparent(true)
@@ -604,7 +619,8 @@ fn cmd_open_tray_overflow() {
 }
 
 #[tauri::command]
-fn cmd_set_volume(level: u8) -> bool {
+async fn cmd_set_volume(level: u8) -> bool {
+    win::status::note_volume(level);
     win::status::set_volume(level)
 }
 
@@ -745,6 +761,10 @@ struct SystemPrefs {
     topbar_auto_hide: bool,
     topbar_app_pill: bool,
     island: bool,
+    /// Whether the top bar is switched on at all. The page reads this before
+    /// showing itself: Rust hides the window at startup when it is off, but the
+    /// page's own `show()` runs afterwards and would put it straight back.
+    topbar_enabled: bool,
 }
 
 #[tauri::command]
@@ -762,6 +782,7 @@ fn cmd_system_prefs() -> SystemPrefs {
         topbar_auto_hide: s.topbar_auto_hide,
         topbar_app_pill: s.topbar_app_pill,
         island: s.island,
+        topbar_enabled: s.topbar_enabled,
     }
 }
 

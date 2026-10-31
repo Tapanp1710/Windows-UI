@@ -50,6 +50,30 @@
     <div id="slider" class="slider hidden no-anim">
       <div id="dock" class="dock glass" role="toolbar" aria-label="Dock">
         <div id="items" class="items"></div>
+
+        <!-- The tray. Everything that used to live in the top bar now sits at the
+             right-hand end of this same pill, so there is one bar at the bottom
+             rather than two bars on opposite edges. It is inside the dock's own
+             element on purpose: the dock window is sized to its content, so the
+             tray widens the window and needs no hit-test region of its own - which
+             is what made the top bar take a second to appear (D-038). -->
+        <div id="tray-sep" class="tray-sep" hidden></div>
+        <div id="tray" class="tray" hidden>
+          <button id="tray-shelf" class="tray-btn shelf-btn" type="button" aria-label="Shelf" hidden>
+            <span class="tray-ico" id="ico-shelf"></span>
+            <span class="shelf-count" id="shelf-count">0</span>
+          </button>
+          <button id="tray-status" class="tray-btn tray-status" type="button" aria-label="Network, sound and battery">
+            <span class="tray-ico" id="ico-wifi"></span>
+            <span class="tray-ico" id="ico-bt"></span>
+            <span class="tray-ico" id="ico-vol"></span>
+            <span class="tray-ico tray-batt" id="ico-batt"></span>
+          </button>
+          <button id="tray-clock" class="tray-btn tray-clock" type="button" aria-label="Date and time">
+            <span id="clock-time">--:--</span>
+            <span id="clock-date" class="clock-date">---</span>
+          </button>
+        </div>
       </div>
     </div>
     <div id="tooltip" class="tooltip" role="tooltip" aria-hidden="true"></div>

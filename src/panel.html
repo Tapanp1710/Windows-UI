@@ -63,6 +63,16 @@
       </nav>
     </main>
 
+    <!-- The shelf, which used to be the top bar's island. Same items, same file in
+         settings.json; it is reached from the dock's tray now. -->
+    <main id="shelf" class="panel" hidden>
+      <h2 class="shelf-title">Shelf</h2>
+      <div class="shelf-grid" id="shelf-grid"></div>
+      <p class="shelf-empty" id="shelf-empty" hidden>
+        Drag files, folders or images onto the dock to park them here.
+      </p>
+    </main>
+
     <main id="calendar" class="panel" hidden>
       <header class="cal-today">
         <div class="cal-dow" id="cal-dow"></div>

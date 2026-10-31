@@ -53,6 +53,8 @@ features = [
   # Laptop panel brightness: WmiMonitorBrightness / WmiMonitorBrightnessMethods in
   # root\wmi. There is no Win32 call for an internal display's backlight.
   "Win32_System_Wmi",
+  # The connected Wi-Fi network's name, for the Wi-Fi tile.
+  "Networking_Connectivity",
   "Win32_System_Rpc",
   "Win32_System_SystemInformation",
   "Win32_Graphics_Dwm",

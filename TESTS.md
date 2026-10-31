@@ -472,3 +472,36 @@ All run against the release build on 2026-10-31, by driving a real mouse pointer
 | X.8 | Multi-monitor | **NOT SUPPORTED** | everything targets the primary monitor. Documented, not fixed |
 | X.9 | Windows 10 | **UNTESTED** | the acrylic and rounded-corner calls behave differently there, and the taskbar is a different window |
 | X.10 | WebView2 on the target machine | by construction | Windows 11 ships it; the NSIS installer falls back to Microsoft's bootstrapper, which needs an internet connection once |
+
+## One bar at the bottom (2026-10-31)
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| B.1 | Top bar hover lag reproduced | PASS | ~1s to appear vs the dock's instant reveal, same sampler and same animation |
+| B.2 | Root cause | FOUND | the top bar's reveal awaited a `requestAnimationFrame` before sending its hit region, in a window clipped to an empty region — not composited, so rAF was throttled to about 1/s (D-038) |
+| B.3 | Tray lives in the dock's pill | PASS | network, Bluetooth, sound, battery, clock and shelf behind a divider |
+| B.4 | Reveal is instant | PASS | the dock window is content-sized, so the tray needs no region and nothing waits on a frame |
+| B.5 | Clock does not wrap | FIXED | "6:45 PM" wrapped onto three lines and made the dock a head taller; `white-space: nowrap` |
+| B.6 | Flyouts open upward | PASS | `cmd_open_panel`'s `above`; verified by screenshot, panel sits above the dock |
+| B.7 | Wi-Fi tile shows the real network | PASS | **"brucy"**, from `GetInternetConnectionProfile().WlanConnectionProfileDetails` — matches the Windows tile |
+| B.8 | Every tile from the Windows panel present | PASS | Wi-Fi, Bluetooth, Airplane mode, Battery saver, Night light, Accessibility, Cast, Project, VPN, Mobile hotspot, Nearby sharing, brightness, volume, battery |
+| B.9 | Shelf reachable without the top bar | PASS | tray button with a count badge, opens a shelf panel; click opens, × removes, drag pulls the real file out |
+| B.10 | Files dropped on the dock park on the shelf | PASS (by construction) | the drop listener moved from the top bar to the dock; still needs a human hand to confirm |
+| B.11 | Top bar off by default | PASS | and its page returns immediately rather than polling behind a hidden window |
+| B.12 | Top bar still available | PASS | the settings switch brings it back |
+
+## The second hang (2026-10-31, evening)
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| H.11 | Reproduced | PASS | `Responding=False` on the dock window; `AppHangB1` logged at **22:09:02** |
+| H.12 | Root cause | FOUND | `cmd_status` is synchronous and built **two COM objects per call** — `MMDeviceEnumerator` and `NetworkListManager`, whose `GetConnectivity` is not reliably fast. The dock polls it every 2s, and the hidden top bar was polling it too (D-040) |
+| H.13 | Fixed | PASS | COM reads moved to a background thread; `volume()`/`network()` read a snapshot. Log: `status poller started` |
+| H.14 | Responsiveness after the fix | PASS | `Responding=True` on 6 samples across 30s, no new hang events |
+| H.15 | Memory after the fix | PASS | **247.0 MB** over 8 processes, down from 302.4 MB — the hidden top bar's page was most of the difference |
+
+## Shortcuts
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| S.1 | `scripts\winkey-matrix.ps1` | **STILL NOT RUN** | started twice, stopped by the user both times because it takes the keyboard over for about a minute. It must be run when nobody is using the machine. Until then the Win-key claim rests on D-029's reasoning, not evidence |

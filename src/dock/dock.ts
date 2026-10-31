@@ -582,6 +582,208 @@ async function refresh(): Promise<void> {
   }
 }
 
+
+/* ===========================================================================
+ * The tray
+ *
+ * Network, Bluetooth, sound, battery, the clock and the shelf — everything the top
+ * bar used to carry, at the right-hand end of the dock's own pill.
+ *
+ * It renders inside `.dock`, so `resizeWindowToContent()` already covers it and no
+ * hit-test region is involved. That matters: the top bar's region update waited on
+ * a `requestAnimationFrame` in a window clipped to nothing, and a window that is
+ * not composited has its frames throttled to roughly one a second — which is
+ * exactly the delay before it appeared. See D-038.
+ * =========================================================================== */
+
+const SVG = (d: string) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+
+const TRAY_ICON = {
+  wifi: SVG(`<path d="M2.5 8.5a15 15 0 0 1 19 0"/><path d="M5.5 12a10.5 10.5 0 0 1 13 0"/><path d="M8.5 15.3a6 6 0 0 1 7 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/>`),
+  wifiOff: SVG(`<path d="M8.5 15.3a6 6 0 0 1 7 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/><path d="M3 3l18 18"/>`),
+  bt: SVG(`<path d="M7 7.5 17 16.5 12 21V3l5 4.5L7 16.5"/>`),
+  vol: SVG(`<path d="M4 9.5h3L11 6v12l-4-3.5H4z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6"/>`),
+  volMute: SVG(`<path d="M4 9.5h3L11 6v12l-4-3.5H4z" fill="currentColor"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>`),
+  shelf: SVG(`<path d="M4 7.5h16M4 7.5v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-10"/><path d="M9.5 4.5h5l1.5 3h-8z"/>`),
+};
+
+/** Battery drawn as a fill, so the level reads without a number. */
+function battSvg(pct: number, charging: boolean): string {
+  const w = Math.max(0, Math.min(1, pct / 100)) * 15.5;
+  const fill = charging ? "var(--accent)" : pct <= 20 ? "#e5484d" : "currentColor";
+  return `<svg viewBox="0 0 32 24" fill="none" stroke="currentColor" stroke-width="1.6">
+    <rect x="1.5" y="6" width="22" height="12" rx="3.5"/>
+    <path d="M25.5 10.5v3" stroke-linecap="round"/>
+    <rect x="3.7" y="8.2" width="${w}" height="7.6" rx="2" fill="${fill}" stroke="none"/>
+    ${charging ? '<path d="M13.6 8.6 10.4 13h3.2l-1 3.2L16 11.6h-3z" fill="var(--accent-text)" stroke="none"/>' : ""}
+  </svg>`;
+}
+
+interface TrayStatus {
+  battery: { percent: number | null; charging: boolean; present: boolean };
+  volume: { level: number; muted: boolean; available: boolean };
+  network: { connected: boolean; internet: boolean };
+  bluetooth: { present: boolean; on: boolean };
+  ssid: string | null;
+}
+
+const trayEl = document.getElementById("tray") as HTMLDivElement;
+const traySepEl = document.getElementById("tray-sep") as HTMLDivElement;
+const shelfBtn = document.getElementById("tray-shelf") as HTMLButtonElement;
+
+/** Quick-settings panel size. Must match the content in panel.html. */
+const QUICK_W = 348;
+const QUICK_H = 478;
+const CAL_W = 300;
+const CAL_H = 330;
+
+function openPanelAbove(kind: string, anchor: HTMLElement, width: number, height: number): void {
+  const r = anchor.getBoundingClientRect();
+  void invoke("cmd_open_panel", {
+    kind,
+    anchorX: r.left + r.width / 2,
+    width,
+    height,
+    // The bar is at the bottom now, so its flyouts grow upward.
+    above: true,
+  });
+}
+
+function tickClock(): void {
+  const now = new Date();
+  document.getElementById("clock-time")!.textContent = now.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  document.getElementById("clock-date")!.textContent = now.toLocaleDateString([], {
+    day: "numeric",
+    month: "short",
+  });
+}
+
+function paintTray(s: TrayStatus): void {
+  const wifi = document.getElementById("ico-wifi")!;
+  wifi.innerHTML = s.network.connected ? TRAY_ICON.wifi : TRAY_ICON.wifiOff;
+  wifi.classList.toggle("off", !s.network.connected);
+  // The network you are on, not the adapter's name — same as the Windows tile.
+  wifi.setAttribute("data-ssid", s.ssid ?? "");
+
+  const bt = document.getElementById("ico-bt")!;
+  bt.innerHTML = TRAY_ICON.bt;
+  bt.hidden = !s.bluetooth.present;
+  bt.classList.toggle("off", !s.bluetooth.on);
+
+  const vol = document.getElementById("ico-vol")!;
+  vol.innerHTML = s.volume.muted || s.volume.level === 0 ? TRAY_ICON.volMute : TRAY_ICON.vol;
+
+  const batt = document.getElementById("ico-batt")!;
+  batt.hidden = !s.battery.present;
+  if (s.battery.present) batt.innerHTML = battSvg(s.battery.percent ?? 0, s.battery.charging);
+
+  const label = [
+    s.ssid ? `Wi-Fi: ${s.ssid}` : s.network.connected ? "Connected" : "No network",
+    s.bluetooth.present ? `Bluetooth ${s.bluetooth.on ? "on" : "off"}` : null,
+    `Volume ${s.volume.level}%`,
+    s.battery.present ? `Battery ${s.battery.percent ?? 0}%` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  document.getElementById("tray-status")!.setAttribute("aria-label", label);
+}
+
+async function refreshTray(): Promise<void> {
+  try {
+    const before = trayEl.offsetWidth;
+    paintTray(await invoke<TrayStatus>("cmd_status"));
+    // Hiding the battery or the Bluetooth glyph changes the pill's width, and the
+    // window is sized to the pill.
+    if (trayEl.offsetWidth !== before) await resizeWindowToContent();
+  } catch {
+    /* a failed poll just leaves the last paint up */
+  }
+}
+
+/**
+ * Files dragged onto the dock get parked on the shelf.
+ *
+ * Tauri reports the native drop target's events for this window, so the whole dock
+ * is the target; the shelf button lights up to say where they are going. This used
+ * to be the island's job.
+ */
+async function wireDrops(): Promise<void> {
+  try {
+    const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+    await getCurrentWebview().onDragDropEvent(async (e) => {
+      const t = e.payload.type;
+      if (t === "enter" || t === "over") {
+        shelfBtn.hidden = false;
+        shelfBtn.classList.add("drop");
+        await resizeWindowToContent();
+      } else if (t === "drop") {
+        shelfBtn.classList.remove("drop");
+        const paths = (e.payload as { paths?: string[] }).paths ?? [];
+        if (paths.length) await invoke("cmd_shelf_add", { paths });
+        await refreshShelf();
+      } else {
+        shelfBtn.classList.remove("drop");
+        await refreshShelf();
+      }
+    });
+  } catch (err) {
+    await invoke("cmd_log", { msg: `dock drag-drop listener failed: ${err}` });
+  }
+}
+
+async function refreshShelf(): Promise<void> {
+  try {
+    const items = await invoke<unknown[]>("cmd_shelf");
+    shelfBtn.hidden = items.length === 0;
+    document.getElementById("shelf-count")!.textContent = String(items.length);
+  } catch {
+    shelfBtn.hidden = true;
+  }
+}
+
+function wireTray(): void {
+  trayEl.hidden = false;
+  traySepEl.hidden = false;
+  document.getElementById("ico-shelf")!.innerHTML = TRAY_ICON.shelf;
+
+  document
+    .getElementById("tray-status")!
+    .addEventListener("click", (e) =>
+      openPanelAbove("quick", e.currentTarget as HTMLElement, QUICK_W, QUICK_H),
+    );
+  document
+    .getElementById("tray-clock")!
+    .addEventListener("click", (e) =>
+      openPanelAbove("calendar", e.currentTarget as HTMLElement, CAL_W, CAL_H),
+    );
+  shelfBtn.addEventListener("click", (e) =>
+    openPanelAbove("shelf", e.currentTarget as HTMLElement, 330, 260),
+  );
+
+  tickClock();
+  // Tick on the minute rather than every second: the clock shows minutes.
+  const schedule = () => {
+    const ms = 60_000 - (Date.now() % 60_000);
+    window.setTimeout(() => {
+      tickClock();
+      schedule();
+    }, ms + 50);
+  };
+  schedule();
+
+  void wireDrops();
+  void refreshTray();
+  void refreshShelf();
+  window.setInterval(() => {
+    void refreshTray();
+    void refreshShelf();
+  }, 2000);
+}
+
 async function main(): Promise<void> {
   try {
     applyPrefs(await invoke<SystemPrefs>("cmd_system_prefs"));
@@ -611,6 +813,9 @@ async function main(): Promise<void> {
   await listen("dock:prefs", async () => {
     applyPrefs(await invoke<SystemPrefs>("cmd_system_prefs"));
   });
+
+  wireTray();
+  await resizeWindowToContent();
 
   window.setInterval(() => void refresh(), REFRESH_MS);
   await getCurrentWindow().show();

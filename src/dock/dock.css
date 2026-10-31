@@ -328,3 +328,135 @@
 .item.dragging {
   opacity: 0.45;
 }
+
+/* ===========================================================================
+ * The tray
+ *
+ * What used to be the top bar: network, Bluetooth, sound, battery, the clock and
+ * the shelf, at the right-hand end of the dock's own pill. One bar at the bottom
+ * instead of two on opposite edges.
+ *
+ * It sits inside `.dock`, so the window keeps being sized to its content and the
+ * tray needs no hit-test region. That is the whole reason the top bar lagged:
+ * a window clipped to an empty region is not composited, so its
+ * requestAnimationFrame - which the region update waited on - was throttled to
+ * about once a second. Nothing here waits on a frame. See D-038.
+ * =========================================================================== */
+
+.tray-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  align-self: stretch;
+  margin: 6px 7px;
+  background: var(--divider);
+  border-radius: 1px;
+}
+
+.tray-sep[hidden],
+.tray[hidden] {
+  display: none;
+}
+
+.tray {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 2px;
+}
+
+.tray-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  cursor: default;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.tray-btn:hover {
+  background: var(--plate-bg);
+}
+
+.tray-btn.on {
+  background: var(--accent-soft);
+}
+
+.tray-ico {
+  display: flex;
+  color: var(--text);
+}
+
+.tray-ico svg {
+  width: 17px;
+  height: 17px;
+  display: block;
+}
+
+.tray-ico.off {
+  opacity: 0.45;
+}
+
+/* The battery glyph is wider than it is tall, so it gets its own box. */
+.tray-batt svg {
+  width: 23px;
+  height: 17px;
+}
+
+.tray-clock {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0;
+  font-size: var(--fs-small);
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  padding: 5px 10px;
+  /* Both lines stay on one line each. Without this the flex parent is free to wrap
+     "6:45 PM" into three rows and the dock grows a head taller than its icons. */
+  white-space: nowrap;
+}
+
+.tray-clock > span {
+  white-space: nowrap;
+}
+
+.clock-date {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* --- the shelf button ----------------------------------------------------- */
+
+.shelf-btn {
+  position: relative;
+  padding: 7px 8px;
+}
+
+.shelf-btn[hidden] {
+  display: none;
+}
+
+.shelf-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 10px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* A file dragged over the dock: the shelf button is the target. */
+.shelf-btn.drop {
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent);
+}
