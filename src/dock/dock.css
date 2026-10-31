@@ -474,3 +474,160 @@
 .tray-pin.on .tray-ico {
   color: var(--accent);
 }
+
+/* ===========================================================================
+ * Search
+ *
+ * The bar becomes the panel. `#items` and `#tray` step aside, `.search-pane`
+ * takes their place inside the same `.dock` element, and because the window is
+ * sized to its content it grows to fit on its own - no second window, no
+ * separate surface, and the glass and radius carry straight over.
+ * =========================================================================== */
+
+.dock.searching .items,
+.dock.searching .tray,
+.dock.searching .tray-sep {
+  display: none;
+}
+
+.search-pane[hidden] {
+  display: none;
+}
+
+.search-pane {
+  display: flex;
+  flex-direction: column;
+  width: 520px;
+  gap: 8px;
+  padding: 2px;
+  animation: search-in var(--t-base) var(--ease-out) both;
+}
+
+@keyframes search-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 2px 4px;
+}
+
+.search-ico {
+  display: flex;
+  color: var(--text-dim);
+}
+
+.search-ico svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.dock-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  padding: 6px 0;
+}
+
+.dock-search:focus {
+  outline: none;
+}
+
+.dock-search::placeholder {
+  color: var(--text-dim);
+}
+
+.search-close {
+  appearance: none;
+  border: 1px solid var(--divider);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  cursor: default;
+}
+
+.search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--glass-edge) transparent;
+}
+
+.search-results:empty {
+  display: none;
+}
+
+.hit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.hit:hover,
+.hit.on {
+  background: var(--accent-soft);
+}
+
+.hit img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.hit .hit-fallback {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: 5px;
+  background: var(--plate-bg);
+}
+
+.hit-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.hit-text b {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hit-text span {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -57,6 +57,8 @@ features = [
   "Networking_Connectivity",
   # Available Wi-Fi networks and joining a saved one, through wlanapi.
   "Win32_NetworkManagement_WiFi",
+  # Paired Bluetooth devices and their connection state.
+  "Win32_Devices_Bluetooth",
   # WlanConnect and WLAN_CONNECTION_PARAMETERS are gated behind Ndis.
   "Win32_NetworkManagement_Ndis",
   "Win32_System_Rpc",

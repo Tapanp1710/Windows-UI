@@ -610,6 +610,7 @@ const TRAY_ICON = {
   volMute: SVG(`<path d="M4 9.5h3L11 6v12l-4-3.5H4z" fill="currentColor"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>`),
   shelf: SVG(`<path d="M4 7.5h16M4 7.5v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-10"/><path d="M9.5 4.5h5l1.5 3h-8z"/>`),
   // Pinned: the pin is pushed in, upright. Unpinned: tilted, as if lifted out.
+  search: SVG(`<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>`),
   pin: SVG(`<path d="M12 16.5V21"/><path d="M8 4.5h8l-1 5 2.5 2.5v1.5H6.5V12L9 9.5z"/>`),
   pinOff: SVG(`<g transform="rotate(38 12 11)"><path d="M12 16.5V21"/><path d="M8 4.5h8l-1 5 2.5 2.5v1.5H6.5V12L9 9.5z"/></g>`),
 };
@@ -751,6 +752,165 @@ async function refreshShelf(): Promise<void> {
   }
 }
 
+/* ==========================================================================
+ * Search
+ *
+ * The bar turns into the panel in place: same window, same glass, grown to fit.
+ * Apps come from the launcher's cached list (already in memory, so filtering is
+ * instant) and files from the same bounded walk the launcher uses.
+ * ========================================================================== */
+
+interface AppEntry {
+  name: string;
+  icon: string | null;
+  parsingName: string;
+}
+
+interface FileHit {
+  name: string;
+  path: string;
+  isDir: boolean;
+}
+
+type Hit = { name: string; sub: string; icon: string | null; run: () => void };
+
+let searchOpen = false;
+let apps: AppEntry[] = [];
+let hits: Hit[] = [];
+let cursor = 0;
+let searchSeq = 0;
+
+async function setSearch(on: boolean): Promise<void> {
+  if (on === searchOpen) return;
+  searchOpen = on;
+  dockEl.classList.toggle("searching", on);
+  $search("search-pane").hidden = !on;
+
+  if (on) {
+    // The dock drops WS_EX_NOACTIVATE for as long as the field is open; without
+    // that it cannot take a keystroke at all.
+    await invoke("cmd_dock_search_focus", { on: true });
+    const input = $search<HTMLInputElement>("dock-search");
+    input.value = "";
+    $search("search-results").textContent = "";
+    hits = [];
+    await resizeWindowToContent();
+    input.focus();
+    // The app list is cached in Rust, so this is a copy, not an enumeration.
+    if (apps.length === 0) apps = await invoke<AppEntry[]>("cmd_launcher_apps").catch(() => []);
+  } else {
+    await invoke("cmd_dock_search_focus", { on: false });
+    await resizeWindowToContent();
+  }
+}
+
+const $search = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+
+function paintHits(): void {
+  const host = $search("search-results");
+  host.textContent = "";
+  hits.forEach((h, i) => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "hit" + (i === cursor ? " on" : "");
+    row.innerHTML = h.icon
+      ? `<img alt="" src="${h.icon}" />`
+      : `<span class="hit-fallback"></span>`;
+    const text = document.createElement("span");
+    text.className = "hit-text";
+    const b = document.createElement("b");
+    b.textContent = h.name;
+    const sub = document.createElement("span");
+    sub.textContent = h.sub;
+    text.append(b, sub);
+    row.appendChild(text);
+    row.addEventListener("click", () => {
+      h.run();
+      void setSearch(false);
+    });
+    host.appendChild(row);
+  });
+  void resizeWindowToContent();
+}
+
+async function runSearch(query: string): Promise<void> {
+  const q = query.trim().toLowerCase();
+  const seq = ++searchSeq;
+  if (!q) {
+    hits = [];
+    paintHits();
+    return;
+  }
+
+  // Apps first and instantly: names that start with the query before names that
+  // merely contain it, which is the order that feels right when typing.
+  const appHits: Hit[] = apps
+    .filter((a) => a.name.toLowerCase().includes(q))
+    .sort((a, b) => {
+      const sa = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+      const sb = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+      return sa - sb || a.name.localeCompare(b.name);
+    })
+    .slice(0, 6)
+    .map((a) => ({
+      name: a.name,
+      sub: "App",
+      icon: a.icon,
+      run: () => void invoke("cmd_launcher_open", { target: a.parsingName }),
+    }));
+
+  hits = appHits;
+  cursor = 0;
+  paintHits();
+
+  const files = await invoke<FileHit[]>("cmd_launcher_search", { query: q }).catch(() => []);
+  // A slower search that finished after a newer one must not overwrite it.
+  if (seq !== searchSeq) return;
+  hits = appHits.concat(
+    files.slice(0, 8).map((f) => ({
+      name: f.name,
+      sub: f.isDir ? "Folder" : f.path,
+      icon: null,
+      run: () => void invoke("cmd_launcher_open", { target: f.path }),
+    })),
+  );
+  paintHits();
+}
+
+function wireSearch(): void {
+  $search("ico-search").innerHTML = TRAY_ICON.search;
+  $search("ico-search-big").innerHTML = TRAY_ICON.search;
+  $search("tray-search").addEventListener("click", () => void setSearch(true));
+  $search("search-close").addEventListener("click", () => void setSearch(false));
+
+  const input = $search<HTMLInputElement>("dock-search");
+  let timer = 0;
+  input.addEventListener("input", () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => void runSearch(input.value), 90);
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (!searchOpen) return;
+    if (e.key === "Escape") {
+      void setSearch(false);
+    } else if (e.key === "Enter") {
+      hits[cursor]?.run();
+      void setSearch(false);
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (hits.length === 0) return;
+      cursor = (cursor + (e.key === "ArrowDown" ? 1 : -1) + hits.length) % hits.length;
+      paintHits();
+    }
+  });
+
+  // Clicking away closes it, the way any search surface should.
+  window.addEventListener("blur", () => {
+    if (searchOpen) void setSearch(false);
+  });
+}
+
 /** Mirrors `dockAlwaysVisible`: pinned means the dock never auto-hides. */
 function paintPin(pinned: boolean): void {
   const btn = document.getElementById("tray-pin")!;
@@ -799,6 +959,7 @@ function wireTray(): void {
   };
   schedule();
 
+  wireSearch();
   void wireDrops();
   void refreshTray();
   void refreshShelf();

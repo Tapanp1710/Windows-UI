@@ -193,12 +193,14 @@ fn main() {
             cmd_media_control,
             cmd_set_widget_positions,
             cmd_widget_restore_focus,
+            cmd_dock_search_focus,
             cmd_topbar_revealed,
             cmd_topbar_pin,
             cmd_glass,
             cmd_radios,
             cmd_set_radio,
             cmd_set_airplane,
+            cmd_bt_devices,
             cmd_wifi_list,
             cmd_wifi_connect,
             cmd_wifi_disconnect,
@@ -439,6 +441,12 @@ fn cmd_brightness() -> Option<u8> {
 #[tauri::command]
 fn cmd_set_brightness(level: u8) {
     win::brightness::set(level);
+}
+
+/// Paired Bluetooth devices. Async: a cross-process call into the BT service.
+#[tauri::command]
+async fn cmd_bt_devices() -> Vec<win::bt::BtDevice> {
+    win::bt::devices()
 }
 
 /// Every visible Wi-Fi network. Async: this calls into the WLAN service (D-033).
@@ -1365,6 +1373,38 @@ fn cmd_widget_restore_focus() {
     if hwnd != 0 {
         win::apps::activate(hwnd);
     }
+}
+
+/// Let the dock take the keyboard, for its search field, and give it back after.
+///
+/// The dock carries `WS_EX_NOACTIVATE` so clicking an icon never steals focus from
+/// what you are working in — which also means you cannot type into it. Search needs
+/// the opposite, so the style is dropped for as long as the field is open and put
+/// straight back when it closes, handing focus to whatever had it before.
+#[tauri::command]
+fn cmd_dock_search_focus(window: tauri::Window, on: bool) -> Result<(), String> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetForegroundWindow, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE,
+    };
+
+    let raw = window.hwnd().map_err(|e| e.to_string())?;
+    let hwnd = HWND(raw.0 as *mut _);
+    unsafe {
+        let cur = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        let flag = WS_EX_NOACTIVATE.0 as isize;
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, if on { cur & !flag } else { cur | flag });
+        if on {
+            let _ = SetForegroundWindow(hwnd);
+        } else {
+            let back = LAST_FOREIGN_FOREGROUND.load(Ordering::SeqCst);
+            if back != 0 {
+                win::apps::activate(back);
+            }
+        }
+    }
+    logln!("dock search focus -> {on}");
+    Ok(())
 }
 
 /// Save where the user dragged the widgets, and which are switched on.

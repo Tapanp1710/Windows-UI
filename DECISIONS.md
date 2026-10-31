@@ -991,3 +991,52 @@ factory documents.
 This is why D-046 looked right and was not the whole story: the Start button and the
 Recycle Bin glyph are our own SVGs and never went through this path, so only real app
 and folder icons were affected — which is exactly the set the user pointed at.
+
+---
+
+## D-050 — Bluetooth: the list is ours, connecting stays Windows'
+**Date:** 2026-11-01 · **Phase:** quick settings
+
+The Bluetooth chevron now shows the paired devices and whether each is connected,
+with a glyph per device class, next to the Wi-Fi list.
+
+`BluetoothFindFirstDevice` over the remembered/authenticated set is the same list the
+Windows Bluetooth page shows, and `fConnected` is the same live state.
+`fIssueInquiry: false` matters: that reads the paired list rather than scanning the
+air, which takes about ten seconds and lights up the radio for no reason.
+
+**Connecting is not done here, and that is a decision rather than a gap.** There is
+no general "connect this device" call. It is per-profile —
+`BluetoothSetServiceState` with an A2DP, HFP or HID GUID — and a device's profiles
+depend on its class. Guessing wrong leaves a half-connected device that the Windows
+UI then disagrees with, which is worse than not offering it. Tapping a device opens
+Windows' own page, which knows each device's profiles.
+
+Device class is packed bit maths: major class in bits 8..12, and for peripherals the
+keyboard/mouse split is in the minor field. That is the kind of code that returns a
+plausible wrong answer silently, so `device_class_decoding` pins real values from the
+assigned-numbers table.
+
+---
+
+## D-051 — Search turns the bar into the panel, in the same window
+**Date:** 2026-11-01 · **Phase:** search
+
+Clicking the magnifier makes the dock *become* the search surface: the icons and tray
+step aside, the field and results take their place inside the same `.dock` element,
+and the window grows to fit. No second window, no separate surface — the glass, the
+radius and the auto-hide all carry over for free, because the dock window has always
+been sized to its content.
+
+Two things this needed:
+
+- **The dock had to be able to take a keystroke.** It carries `WS_EX_NOACTIVATE` so
+  clicking an icon never steals focus from what you are working in, and that also
+  means it cannot receive typing. `cmd_dock_search_focus` drops the style for exactly
+  as long as the field is open and puts it straight back on close, handing focus to
+  whatever held it before.
+- **Results had to be instant.** Apps come from the launcher's cached list, already
+  in memory, so filtering is a local array pass and the first results appear on the
+  keystroke. Files come from the same bounded walk the launcher uses, and land a
+  moment later. A sequence number drops a slow search that finishes after a newer
+  one, which is otherwise a race you only notice when typing fast.

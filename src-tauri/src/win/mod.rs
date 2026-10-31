@@ -12,6 +12,7 @@ pub mod icons;
 pub mod media;
 pub mod pins;
 pub mod brightness;
+pub mod bt;
 pub mod radios;
 pub mod wifi;
 pub mod status;
