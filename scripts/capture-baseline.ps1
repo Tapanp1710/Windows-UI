@@ -69,6 +69,10 @@ $themeKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
 $theme = Get-ItemProperty $themeKey -ErrorAction SilentlyContinue
 
 $baseline = [ordered]@{
+    # Which machine this describes. restore-windows.ps1 refuses a baseline captured
+    # somewhere else, because "put the taskbar back as it was" means as it was HERE -
+    # and this file is per-machine state that must never travel with the repo.
+    machine           = $env:COMPUTERNAME
     capturedAt        = (Get-Date).ToString('o')
     taskbarStateRaw   = $state
     taskbarAutoHide   = [bool]($state -band 1)
