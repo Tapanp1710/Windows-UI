@@ -1040,3 +1040,55 @@ Two things this needed:
   keystroke. Files come from the same bounded walk the launcher uses, and land a
   moment later. A sequence number drops a slow search that finishes after a newer
   one, which is otherwise a race you only notice when typing fast.
+
+---
+
+## D-052 — The Win key, done so the modifier still comes up
+**Date:** 2026-11-01 · **Phase:** launcher
+
+D-044 handed the Win key back to Windows after swallowing its release latched the
+modifier system-wide. The requirement did not go away, so here is the version that
+does not do that.
+
+Start opens on the Win key's **release**, and only when nothing was pressed during
+the hold. The release still has to reach Windows or the modifier latches. So the real
+release is swallowed and **three events are injected in its place**: Control down,
+Control up, Win up. Windows sees the press as part of a chord — Win+Ctrl alone does
+nothing — so Start stays shut, and the final Win up clears the latch properly.
+
+Order is the whole trick. The injected events queue behind the one being handled, so
+they have to replace the real release rather than accompany it.
+
+**Skip our own injections, not all injected input.** The obvious filter is
+`LLKHF_INJECTED`, and it is wrong: that flag is also set by on-screen keyboards,
+remote desktop, accessibility tools and macro software, so keying off it silently
+breaks the launcher for anyone typing through one of those. Our events carry a
+`dwExtraInfo` tag instead, which identifies exactly ours.
+
+That distinction was not theoretical — the first build filtered on `LLKHF_INJECTED`,
+which meant every synthetic keystroke was ignored, including the ones testing it. The
+test reported "Start opened, no latch" and I nearly concluded the approach had failed.
+
+**Verified:** a bare Win tap opens our launcher with Windows Start shut and
+`GetKeyState(VK_LWIN)` released; Win+E opens Explorer, Win+I opens Settings, Win+R
+opens the Run dialog, and nothing latches. The full matrix in
+`scripts\winkey-matrix.ps1` is still worth running.
+
+A caution for whoever reads this next: during that testing a faulty detector said
+Win+R was broken, and a control run with the app stopped seemed to confirm it. A
+window-by-window diff showed the Run dialog opening normally the whole time. The
+detector was wrong, not the feature — check the measurement before reverting the
+code.
+
+---
+
+## D-053 — Widgets are chosen from the taskbar, and switching one off keeps it
+**Date:** 2026-11-01 · **Phase:** widgets
+
+Weather and the calendar were not wanted, but deleting them would throw away where
+they sit and what they are set to.
+
+**Decision:** a tray button opens a list of the five widgets with their state. A
+widget that is switched off is hidden, not removed: the toggle writes the whole
+widgets map back with one flag flipped, so positions and every other widget travel
+untouched and switching it back on returns it exactly where it was.

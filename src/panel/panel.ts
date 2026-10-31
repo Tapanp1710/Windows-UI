@@ -549,6 +549,52 @@ async function renderShelf(): Promise<void> {
   }
 }
 
+/* --------------------------------------------------------------- widgets */
+
+interface WidgetState {
+  on: boolean;
+  x: number;
+  y: number;
+}
+
+const WIDGET_LABEL: Record<string, string> = {
+  clock: "Clock",
+  weather: "Weather",
+  calendar: "Calendar",
+  media: "Now playing",
+  stats: "CPU, memory and battery",
+};
+
+async function renderWidgets(): Promise<void> {
+  const cfg = await invoke<{ settings: { widgets: Record<string, WidgetState> } }>("cmd_get_config")
+    .catch(() => null);
+  const widgets = cfg?.settings.widgets ?? {};
+  const list = $("widget-list");
+  list.textContent = "";
+
+  for (const [id, label] of Object.entries(WIDGET_LABEL)) {
+    const state = widgets[id];
+    if (!state) continue;
+
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "net" + (state.on ? " on" : "");
+    row.innerHTML = `
+      <span class="net-name"><b></b><span>${state.on ? "Showing" : "Hidden"}</span></span>
+      <span class="net-lock">${state.on ? "&#10003;" : ""}</span>`;
+    row.querySelector("b")!.textContent = label;
+
+    row.addEventListener("click", async () => {
+      // Send the whole map back with one flag flipped: position and the other
+      // widgets travel untouched, so switching off never loses where it sat.
+      const next = { ...widgets, [id]: { ...state, on: !state.on } };
+      await invoke("cmd_patch_settings", { patch: { widgets: next } });
+      await renderWidgets();
+    });
+    list.appendChild(row);
+  }
+}
+
 /* -------------------------------------------------------------- startup */
 
 async function main(): Promise<void> {
@@ -570,7 +616,10 @@ async function main(): Promise<void> {
 
   await applyGlass();
 
-  if (kind === "shelf") {
+  if (kind === "widgets") {
+    $("widgets").hidden = false;
+    await renderWidgets();
+  } else if (kind === "shelf") {
     $("shelf").hidden = false;
     await renderShelf();
   } else if (kind === "calendar") {

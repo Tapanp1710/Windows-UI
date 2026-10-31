@@ -595,3 +595,32 @@ All run against the release build on 2026-10-31, by driving a real mouse pointer
 | S.6 | Arrow keys and Enter | implemented, **not exercised** | the selection highlight is visible on the first row |
 | S.7 | Escape closes and returns focus | PASS | focus handed back to the previously foreground window |
 | S.8 | A slow search cannot overwrite a newer one | PASS (by construction) | sequence number guard |
+
+## Win key on the launcher, second attempt (2026-11-01)
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| W.1 | Bare Win tap opens our launcher | **PASS** | launcher window visible, foreground `Chrome_WidgetWin_1` |
+| W.2 | Windows Start does **not** open | **PASS** | no `Windows.UI.Core.CoreWindow` in the foreground |
+| W.3 | **Win modifier is released** | **PASS** | `GetKeyState(VK_LWIN)` clear after the tap — the property D-044 exists to protect |
+| W.4 | Win+E | PASS | File Explorer (`CabinetWClass`) |
+| W.5 | Win+I | PASS | Settings (`ApplicationFrameWindow`) |
+| W.6 | Win+R | PASS | Run dialog (`#32770 | Run`), confirmed by a window-by-window diff |
+| W.7 | Nothing latches after combos | PASS | Win and Ctrl both clear |
+| W.8 | Our injections skipped, others honoured | PASS | tagged with `dwExtraInfo`, not `LLKHF_INJECTED` — the flag version ignored on-screen keyboards and remote desktop too, and made the feature untestable |
+| W.9 | Full `winkey-matrix.ps1` | **still not run** | the combinations above were checked individually |
+
+### A measurement error worth recording
+A first detector reported Win+R broken, and a control run with the app stopped
+appeared to confirm a regression. A window diff showed the Run dialog opening
+normally throughout — the detector was faulty, not the feature. Nearly reverted
+working code on it.
+
+## Widgets picker (2026-11-01)
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| G.1 | Tray button opens the widget list | implemented | **not yet seen on screen** — the display went to sleep mid-verification |
+| G.2 | Weather and calendar switched off | PASS | live settings: `weather on=False`, `calendar on=False`; clock, media and stats still on |
+| G.3 | Switching off keeps position | PASS (by construction) | the whole map is written back with one flag flipped |
+| G.4 | App healthy after the change | PASS | responding, no hang events |

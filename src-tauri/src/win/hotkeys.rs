@@ -98,6 +98,52 @@ fn held(vk: i32) -> bool {
     unsafe { (GetAsyncKeyState(vk) as u16 & 0x8000) != 0 }
 }
 
+/// Let the Win key up **without** opening Start.
+///
+/// Start opens on the Win key's release, and only when nothing was pressed during
+/// the hold. D-044 is the record of what happens if you simply swallow that release:
+/// Windows is never told the modifier came back up, it stays latched system-wide,
+/// and every later keystroke becomes a chord. The key has to come up.
+///
+/// So the real release is swallowed and three events are injected in its place:
+/// Control down, Control up, then Win up. Windows sees the press as part of a
+/// chord - which it ignores, Win+Ctrl alone does nothing - so Start stays shut, and
+/// the final Win up clears the latch properly.
+///
+/// Order matters: these are queued behind the event being handled, so they must be
+/// injected *instead of* passing the real release on, never alongside it. All three
+/// carry LLKHF_INJECTED and are skipped at the top of the hook.
+/// Marks keystrokes this module injects, so the hook can skip its own and nobody
+/// else's. Arbitrary, just has to be unlikely: "macu" in ASCII.
+const INJECTED_BY_US: usize = 0x6D61_6375;
+
+unsafe fn release_win_without_start(win_vk: u16) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+        KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_CONTROL,
+    };
+
+    let key = |vk: VIRTUAL_KEY, flags: KEYBD_EVENT_FLAGS| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: vk,
+                wScan: 0,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: INJECTED_BY_US,
+            },
+        },
+    };
+
+    let events = [
+        key(VK_CONTROL, KEYBD_EVENT_FLAGS(0)),
+        key(VK_CONTROL, KEYEVENTF_KEYUP),
+        key(VIRTUAL_KEY(win_vk), KEYEVENTF_KEYUP),
+    ];
+    SendInput(&events, std::mem::size_of::<INPUT>() as i32);
+}
+
 unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         VK_LMENU, VK_LWIN, VK_MENU, VK_RMENU, VK_RWIN, VK_SHIFT, VK_TAB,
@@ -106,6 +152,20 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
     // HC_ACTION is 0. Anything else must be passed on untouched.
     if code == 0 {
         let kb = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
+
+        // Skip **our own** injections, not every injected event.
+        //
+        // `release_win_without_start` synthesises keystrokes that come straight back
+        // through this hook, and treating them as real input would mark the press
+        // "used" and loop. The obvious test is LLKHF_INJECTED - and it is wrong:
+        // that flag is set by on-screen keyboards, remote desktop, accessibility
+        // tools and macro software too, so keying off it means the launcher quietly
+        // stops working for anyone typing through one of those. Tagging our own
+        // events with `dwExtraInfo` identifies exactly ours and nothing else.
+        if kb.dwExtraInfo == INJECTED_BY_US {
+            return CallNextHookEx(None, code, wparam, lparam);
+        }
+
         let vk = kb.vkCode as u16;
         let msg = wparam.0 as u32;
         let down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
@@ -129,21 +189,20 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
         }
 
         if is_win && up {
-            // Tracking only. **The Win key is never swallowed** - see D-044.
-            //
-            // Returning 1 here used to stop Start opening, and it did. It also meant
-            // Windows never saw the key come back up, so the Win modifier stayed
-            // latched system-wide: every later keystroke became a chord. Pressing D
-            // showed the desktop, E opened Explorer, R opened Run. The whole keyboard
-            // became unusable until the app was killed.
-            //
-            // You cannot swallow a modifier's *release* without swallowing its press
-            // too, and swallowing the press means re-synthesising it for every
-            // combination - which is the version that breaks Win+L. The brief's own
-            // fallback applies: keep Start on the Win key and log it. Our launcher
-            // opens from the dock's Start button, which has always worked.
-            WIN_USED.store(false, Ordering::Relaxed);
+            let used = WIN_USED.swap(false, Ordering::Relaxed)
+                // Windows counts a click during the press as "used" too.
+                || crate::win::mouse_button_down();
             WIN_DOWN.store(false, Ordering::Relaxed);
+
+            if !used && LAUNCHER_ENABLED.load(Ordering::Relaxed) {
+                // Swallow this release and hand Windows a different one - see
+                // `release_win_without_start` and D-052. The key MUST still come
+                // up as far as Windows is concerned; D-044 is what happens when
+                // it does not.
+                release_win_without_start(vk);
+                send(Key::Launcher);
+                return LRESULT(1);
+            }
         }
 
         if down && vk == 0x1B && LAUNCHER_OPEN.load(Ordering::Relaxed) {

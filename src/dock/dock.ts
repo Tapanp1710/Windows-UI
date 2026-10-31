@@ -610,6 +610,7 @@ const TRAY_ICON = {
   volMute: SVG(`<path d="M4 9.5h3L11 6v12l-4-3.5H4z" fill="currentColor"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>`),
   shelf: SVG(`<path d="M4 7.5h16M4 7.5v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-10"/><path d="M9.5 4.5h5l1.5 3h-8z"/>`),
   // Pinned: the pin is pushed in, upright. Unpinned: tilted, as if lifted out.
+  widgets: SVG(`<rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.8"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="1.8"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.8"/><rect x="13" y="13" width="7.5" height="7.5" rx="1.8"/>`),
   search: SVG(`<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>`),
   pin: SVG(`<path d="M12 16.5V21"/><path d="M8 4.5h8l-1 5 2.5 2.5v1.5H6.5V12L9 9.5z"/>`),
   pinOff: SVG(`<g transform="rotate(38 12 11)"><path d="M12 16.5V21"/><path d="M8 4.5h8l-1 5 2.5 2.5v1.5H6.5V12L9 9.5z"/></g>`),
@@ -881,6 +882,10 @@ function wireSearch(): void {
   $search("ico-search").innerHTML = TRAY_ICON.search;
   $search("ico-search-big").innerHTML = TRAY_ICON.search;
   $search("tray-search").addEventListener("click", () => void setSearch(true));
+  $search("ico-widgets").innerHTML = TRAY_ICON.widgets;
+  $search("tray-widgets").addEventListener("click", (e) =>
+    openPanelAbove("widgets", e.currentTarget as HTMLElement, 300, 290),
+  );
   $search("search-close").addEventListener("click", () => void setSearch(false));
 
   const input = $search<HTMLInputElement>("dock-search");
