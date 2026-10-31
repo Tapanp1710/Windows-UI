@@ -103,6 +103,21 @@ What makes them behave like desktop widgets rather than a floating panel:
 - Each has its own switch, plus a master switch that destroys the layer and gives the
   memory back.
 
+### After your feedback
+- **Shadows.** Every surface sits inside a click-through mask, and that mask was a
+  rectangle — which squared off every rounded corner and cut the shadow into a hard
+  slab. The masks are rounded now and sized to exactly how far the shadow reaches, so
+  it fades out instead of ending in a line.
+- **The top-left pill is gone**, and your windows get the whole screen: the top bar
+  now hides itself and reserves nothing. Touch the top edge and it comes back.
+- **Wi-Fi, Bluetooth, volume and battery open a panel under the pill you clicked**,
+  not Windows' flyout down by the taskbar. The switches throw the real radios.
+- **Real glass.** The settings window and the panels are genuinely blurred by the
+  compositor, rounded by Windows itself, with its own hairline and drop shadow.
+- **A Dynamic Island.** The clock pill expands on hover to what is playing — album
+  art, title, transport — and expands on its own for a few seconds when the volume
+  changes, the charger goes in or out, or the track changes.
+
 ### Safety — the part that matters most
 - The taskbar is restored on a clean exit.
 - A **watchdog process** restores it if the app is hard-killed. Verified repeatedly:
@@ -117,8 +132,8 @@ What makes them behave like desktop widgets rather than a floating panel:
 
 | Thing | Why it was left as Windows |
 |---|---|
-| **Quick Settings panel** (Wi-Fi, Bluetooth, volume, battery) | The brief requires clicking these to open *the same* Windows flyout. A hand-drawn replacement would be a different panel with different behaviour. Our icons open Windows' own. |
-| **Calendar / notification centre** | Same reasoning. |
+| **Choosing a Wi-Fi network, pairing a Bluetooth device** | Our panel throws the real radio on and off, which is what the Windows tile does. Picking a network or pairing a device is a whole flow with its own dialogs, so the panel links straight to the Windows page instead of half-copying it. |
+| **The notification list** | The calendar panel shows the month; notifications themselves still belong to Windows, and the panel has a button that opens them. |
 | **Start menu** | PHASE 3 is not built yet, so the Start button opens the real Start menu (via Ctrl+Esc). It *sends* a shortcut rather than intercepting one, so no Windows key binding is altered. |
 | **Jump lists** | Reading another app's jump list means parsing undocumented files with no supported API. The menu offers launch / pin / unpin / close instead. (D-005) |
 | **Progress & attention indicators** | Receiving these means *being* the registered shell taskbar, not drawing one. The visuals are implemented and correct, but nothing can feed them from a normal app. (D-006) |
@@ -181,7 +196,7 @@ the 200 MB this costs is a larger slice of your machine than it would have been 
 
 ## 4. Decisions I made on my own
 
-Sixteen, all in **[DECISIONS.md](DECISIONS.md)**. The ones that would change your plans:
+Twenty-six, all in **[DECISIONS.md](DECISIONS.md)**. The ones that would change your plans:
 
 - **D-001** — continued past the missing MSVC toolchain using a no-admin GNU path,
   instead of stopping as STEP 0 says. Stopping would have delivered nothing, and the
@@ -199,6 +214,13 @@ Sixteen, all in **[DECISIONS.md](DECISIONS.md)**. The ones that would change you
   Windows** puts your original back. Two different promises, two different buttons.
 - **D-016** — the tray icon is built as asked but cannot be clicked while the taskbar is
   hidden, so the same menu lives on the dock and the top bar too.
+- **D-020** — all panels share one WebView2 renderer. That is what keeps memory inside
+  target; the cost is that a renderer crash takes every panel rather than one.
+- **D-022** — the top bar's controls open our own panels instead of Windows' flyouts.
+  This is a deliberate departure from the original core rule, made because you asked
+  for it after seeing the first version.
+- **D-026** — the island, and the four Alcove features I did **not** build: the file
+  shelf, clipboard history, camera mirror and timers.
 
 ---
 
@@ -265,12 +287,12 @@ blank window. That cost a long detour; the script handles it.
 
 ## 6. Resource usage (idle, measured)
 
-Measured over 30 s: dock, top bar and all five widgets running, settings closed.
+Measured over 30 s: dock, top bar, island and all five widgets running, panels closed.
 
 | Metric | Value | Target | Verdict |
 |---|---|---|---|
-| Idle CPU | **0.195%** across 8 processes (8 cores) | near-0% | **met** |
-| Private bytes | **213.9 MB** | under 250 MB | **met** |
+| Idle CPU | **0.28%** across 8 processes (8 cores) | near-0% | **met** |
+| Private bytes | **213.2 MB** | under 250 MB | **met** |
 | Processes | 8 (2 ours + 6 WebView2) | — | was 10 before the panels shared a renderer |
 | Without the widgets | ~200 MB | — | the master switch destroys the layer |
 | Before sharing a renderer | 258.3 MB | — | over target; see D-020 |

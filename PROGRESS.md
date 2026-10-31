@@ -82,15 +82,25 @@ a recorded baseline instead of forcing "always visible".
 - Auto-hide: reveals on touching the bottom screen edge, conceals 400 ms after leaving.
 - Light/dark follow Windows; Windows' "Animation effects" setting is respected.
 
-### Top bar (PHASE 2)
-- Three floating glass pills 6px from the top: focused app, date and time in the user's
-  own Windows format, and a status pill (network, Bluetooth, volume, battery).
-- Clicking the status icons opens **Windows' own Quick Settings**; clicking the clock
-  opens **Windows' own calendar and notification centre**. Not replicas.
+### Top bar and island (PHASE 2, reworked after feedback)
+- **Auto-hides by default**: slides away, and comes back when the pointer touches the
+  top edge. **Reserves nothing**, so maximised windows get the whole screen. While it
+  is away its hit-test region is empty, so the top strip behaves like bare screen.
+- Two pills: the **island** (centre) and a status pill (network, Bluetooth, volume,
+  battery). The focused-app pill is off by default — it repeated what the window in
+  front already said.
+- **The island** is the centre pill: collapsed it is the clock; hovering expands it to
+  what is playing, with album art, title and transport controls; and it expands by
+  itself for a few seconds when the volume changes, the charger goes in or out, or the
+  track changes. (D-026)
+- **Clicking Wi-Fi, Bluetooth, volume or battery opens our own glass panel under the
+  pill**, not Windows' flyout down by the taskbar. The switches drive the **real
+  radios**; the slider drives the real audio endpoint; everything not duplicated links
+  to the matching Windows settings page. (D-022)
+- Clicking the island opens a calendar panel the same way.
 - Scrolling on the volume icon changes the volume, 2% per notch.
-- The window spans the screen but its **clickable area is only the three pills**, so
-  clicks between them reach the app underneath.
-- 63px is reserved at the top, so maximised windows stop below the bar.
+- The window spans the screen but its **clickable area is only the pills** (and the
+  island's body while it is open), so clicks between them reach the app underneath.
 
 ### Desktop widgets (PHASE 5)
 - Five glass widgets on the desktop: **clock**, **calendar** (today highlighted),
@@ -128,15 +138,25 @@ a recorded baseline instead of forcing "always visible".
   Installing and uninstalling were both verified; the uninstaller leaves nothing behind
   but this app's own log file. The loose `.exe` still runs without installing anything.
 
+### Look
+- **Real blurred glass** on the settings window and the panels, through
+  `SetWindowCompositionAttribute`, rounded by DWM so the blur follows the corner and
+  Windows draws the hairline border and drop shadow. The dock, top bar and widgets keep
+  painted glass, because each of those windows holds several separate islands and a
+  window-wide blur would fill the gaps between them. (D-023)
+- **Shadows are sized to the hit-test regions** that clip them: rounded regions,
+  inflated by exactly the shadow's reach. Before this the regions were rectangles and
+  every rounded card was clipped into a sharp-cornered slab. (D-025)
+
 ### Safety
 - Taskbar hidden while running, restored on clean exit.
 - **Watchdog process restores the taskbar after a hard kill** (verified repeatedly:
   taskbar returns, the user's original auto-hide setting is preserved, no orphans).
 - `restore-windows.ps1` recovers the taskbar even when the whole process tree is killed.
 
-### Performance (30 s idle, dock + top bar + widgets, settings closed)
-- **Idle CPU: 0.195%** across 8 processes — target near-0%. **Met.**
-- **RAM: 213.9 MB private.** Target under 250 MB. **Met.**
+### Performance (30 s idle, dock + top bar + island + widgets, panels closed)
+- **Idle CPU: 0.28%** across 8 processes — target near-0%. **Met.**
+- **RAM: 213.2 MB private.** Target under 250 MB. **Met.**
 
 Working set overstates it badly, because Chromium's shared binaries are counted once
 per process; private bytes is the fair number.
@@ -231,6 +251,18 @@ These cost real time and are worth not rediscovering:
    that expose Play and Pause but not the toggle. Ask for the specific transition.
 16. **The Windows taskbar can come back on its own.** The shell's "Open with" dialog
    did it. Hiding it once at startup is not enough.
+17. **`SetWindowRgn` does not clip acrylic.** DWM composites the blur against the
+   window *rectangle* and ignores the region, so a region with 21px corners still
+   produced a perfectly square panel. `DWMWA_WINDOW_CORNER_PREFERENCE` is what DWM
+   itself honours.
+18. **A flyout cannot rely on losing focus to know it should close**, at least not
+   here: the top bar is not focusable, so clicking a pill leaves focus where it was,
+   and a panel that took focus on creation lost it again a moment later and closed
+   itself every time. Panels take no focus and watch for a click outside instead.
+19. **`WebviewUrl::App` takes a PathBuf**, so `"panel.html?kind=quick"` is a filename,
+   not a URL with a query string.
+20. **A region sent on a state change is measured mid-transition.** The island's
+   region has to reserve its full footprint, or the body is clipped away as it grows.
 
 ---
 
