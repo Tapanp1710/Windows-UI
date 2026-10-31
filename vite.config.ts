@@ -19,6 +19,7 @@ export default defineConfig({
         settings: resolve(__dirname, "src/settings.html"),
         widgets: resolve(__dirname, "src/widgets.html"),
         panel: resolve(__dirname, "src/panel.html"),
+        switcher: resolve(__dirname, "src/switcher.html"),
       },
     },
   },

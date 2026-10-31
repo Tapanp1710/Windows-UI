@@ -1,0 +1,110 @@
+/*
+ * Alt+Tab switcher.
+ *
+ * The window covers the screen and is click-through everywhere except the bar, so a
+ * click outside dismisses it onto whatever is underneath. Each card leaves a hole
+ * for its DWM preview: the compositor draws that window's live contents over ours,
+ * so nothing may be painted inside `.shot`.
+ */
+
+body {
+  background: transparent;
+}
+
+.wrap {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bar {
+  max-width: calc(100vw - 80px);
+  padding: 16px 16px 10px;
+  border-radius: 22px;
+  animation: bar-in var(--t-base) var(--ease-out) both;
+}
+
+@keyframes bar-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+.cards {
+  display: flex;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.card {
+  flex: 0 0 auto;
+  width: 176px;
+  padding: 8px;
+  border-radius: var(--radius-card);
+  border: 2px solid transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  cursor: default;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+}
+
+.card.on {
+  background: var(--plate-bg);
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+/* The preview hole. The checkerboard-free flat fill is only what shows for a window
+   DWM will not give us - a minimised one, usually. */
+.shot {
+  width: 160px;
+  height: 100px;
+  border-radius: 9px;
+  background: var(--glass-edge);
+  overflow: hidden;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.row img {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.row span {
+  font-size: var(--fs-small);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-dim);
+}
+
+.card.on .row span {
+  color: var(--text);
+}
+
+/* The selected window's full title, which rarely fits in a card. */
+.caption {
+  margin-top: 10px;
+  text-align: center;
+  font-size: var(--fs-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 18px;
+}

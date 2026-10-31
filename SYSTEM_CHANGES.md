@@ -57,6 +57,17 @@ hook of any kind.
 Neither U-4 nor U-5 is on by default, and neither has been left on: both were switched
 on, verified, and switched off again during testing.
 
+### The one keyboard hook (PHASE 4)
+To put its own switcher on Alt+Tab, the app installs a single `WH_KEYBOARD_LL` hook
+while it runs. It is the only hook in the project and it **swallows exactly two
+keystrokes**: `Tab` while Alt is physically held, and `Esc` while the switcher is
+showing. Everything else passes through untouched.
+
+The hook lives in this process and **dies with it** - there is nothing to undo and
+nothing left behind. Switching "Use this app's window switcher" off in settings stops
+it swallowing anything, and Windows' own Alt+Tab is back immediately. So does quitting
+the app, killing it, or a window running as administrator taking focus.
+
 ### A note on the two shortcuts the UI sends
 The Start button sends **Ctrl+Esc**, and the top bar sends **Win+A** / **Win+N**, through
 `SendInput`. These *send* a keystroke the way any automation tool does; they do **not**

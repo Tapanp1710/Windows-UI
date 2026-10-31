@@ -8,6 +8,7 @@ mod dock_model;
 mod log;
 mod settings;
 mod startup;
+mod switcher;
 mod wallpaper;
 mod watchdog;
 mod win;
@@ -84,6 +85,10 @@ fn restore_windows_state() {
     if RESTORED.swap(true, Ordering::SeqCst) {
         return;
     }
+    // Take the keyboard hook out first, so Alt+Tab is back in Windows' hands before
+    // anything else about the shutdown can go wrong.
+    win::hotkeys::uninstall();
+    win::dwm::clear();
     if let Some(flag) = AUTOHIDE_RUNNING.lock().unwrap().take() {
         flag.store(false, Ordering::SeqCst);
     }
@@ -196,6 +201,8 @@ fn main() {
             cmd_close_panel,
             cmd_panel_kind,
             cmd_media_art,
+            cmd_switcher_slots,
+            cmd_switcher_pick,
         ])
         .setup(|app| {
             if let Err(e) = build_tray(app.handle()) {
@@ -234,6 +241,7 @@ fn main() {
             }
             // Only costs anything when something is actually playing.
             win::media::start();
+            switcher::start(app.handle().clone());
             AUTOHIDE_RUNNING
                 .lock()
                 .unwrap()
@@ -1057,6 +1065,34 @@ fn cmd_widget_data() -> WidgetData {
     }
 }
 
+/// Where the switcher's preview slots ended up, so DWM can draw into them.
+///
+/// The page reports these after layout, because only it knows where the cards are.
+/// They are in CSS pixels relative to the switcher window's client area.
+#[tauri::command]
+fn cmd_switcher_slots(window: tauri::Window, slots: Vec<SwitcherSlot>) -> tauri::Result<()> {
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let dest = window.hwnd()?.0 as isize;
+    switcher::place_thumbnails(dest, &slots, scale);
+    Ok(())
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SwitcherSlot {
+    pub hwnd: isize,
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
+/// A click on a card: switch to that window and close.
+#[tauri::command]
+fn cmd_switcher_pick(app: tauri::AppHandle, hwnd: isize) {
+    switcher::pick(&app, hwnd);
+}
+
 /// Album art for the track the island is showing, as a data URL.
 ///
 /// Separate from `cmd_status` because it is tens of kilobytes: the island asks for
@@ -1163,6 +1199,7 @@ fn apply_settings(app: &tauri::AppHandle, initial: bool) {
     // sampler; before PHASE 6 it was stored and then never read.
     autohide::ALWAYS_VISIBLE.store(s.dock_always_visible, Ordering::SeqCst);
     autohide::TOPBAR_AUTO_HIDE.store(s.topbar_auto_hide, Ordering::SeqCst);
+    win::hotkeys::ENABLED.store(s.switcher_enabled, Ordering::SeqCst);
 
     for (label, enabled) in [("dock", s.dock_enabled), ("topbar", s.topbar_enabled)] {
         let Some(w) = app.get_webview_window(label) else {
