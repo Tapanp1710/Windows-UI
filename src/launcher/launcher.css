@@ -221,10 +221,10 @@ html[data-acrylic="on"] body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--plate-bg);
-  border: 1px solid var(--plate-border);
+  /* Same reasoning as the dock: the icon is its own artwork, not a chip. */
+  background: transparent;
+  border: 0;
   border-radius: 50%;
-  overflow: hidden;
 }
 
 html[data-icon-shape="squircle"] .plate {

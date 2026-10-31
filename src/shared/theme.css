@@ -51,7 +51,7 @@
 
   /* --- light surfaces ------------------------------------------------------ */
   --glass-bg: rgba(250, 252, 255, 0.88);
-  --glass-border: rgba(255, 255, 255, 0.80);
+  --glass-border: rgba(150, 175, 215, 0.38);
   --glass-edge: rgba(22, 45, 86, 0.12);
   /* Every surface in this app lives inside a SetWindowRgn hit-test region, and a
      shadow wider than that region's margin gets clipped into a hard-edged slab.

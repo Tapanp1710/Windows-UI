@@ -129,17 +129,21 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
         }
 
         if is_win && up {
-            let used = WIN_USED.swap(false, Ordering::Relaxed)
-                // Windows also treats a click during the press as "used".
-                || crate::win::mouse_button_down();
+            // Tracking only. **The Win key is never swallowed** - see D-044.
+            //
+            // Returning 1 here used to stop Start opening, and it did. It also meant
+            // Windows never saw the key come back up, so the Win modifier stayed
+            // latched system-wide: every later keystroke became a chord. Pressing D
+            // showed the desktop, E opened Explorer, R opened Run. The whole keyboard
+            // became unusable until the app was killed.
+            //
+            // You cannot swallow a modifier's *release* without swallowing its press
+            // too, and swallowing the press means re-synthesising it for every
+            // combination - which is the version that breaks Win+L. The brief's own
+            // fallback applies: keep Start on the Win key and log it. Our launcher
+            // opens from the dock's Start button, which has always worked.
+            WIN_USED.store(false, Ordering::Relaxed);
             WIN_DOWN.store(false, Ordering::Relaxed);
-
-            if !used && LAUNCHER_ENABLED.load(Ordering::Relaxed) {
-                send(Key::Launcher);
-                // The only keystroke taken from the Win key, and exactly the one
-                // that would have opened Start.
-                return LRESULT(1);
-            }
         }
 
         if down && vk == 0x1B && LAUNCHER_OPEN.load(Ordering::Relaxed) {
