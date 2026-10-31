@@ -6,6 +6,10 @@ Every change made outside the project folder, with exact undo steps.
 **Nothing here required administrator rights. Nothing here has been deleted or
 overwritten outside the project folder.**
 
+**The app itself writes no registry keys.** The only registry entry anywhere in this
+project is the uninstall record Windows expects, and that is written by the NSIS
+installer *if you choose to run it* - see section 3.
+
 ---
 
 ## 1. Toolchain installs (STEP 0) — additive, no admin
@@ -14,6 +18,7 @@ overwritten outside the project folder.**
 |---|---|---|---|
 | T-1 | Rust toolchain `stable-x86_64-pc-windows-gnu` 1.99.1, installed per-user by `rustup-init.exe` | `%USERPROFILE%\.rustup`, `%USERPROFILE%\.cargo` | `rustup self uninstall -y`, or delete both folders |
 | T-2 | Portable WinLibs MinGW-w64 GCC 16.2.0 (UCRT), extracted from a zip — no installer, no registry | `%LOCALAPPDATA%\macui-toolchain` | `Remove-Item -Recurse -Force "$env:LOCALAPPDATA\macui-toolchain"` |
+| T-3 | NSIS 3.13 + `nsis_tauri_utils.dll`, downloaded automatically by the Tauri CLI the first time an installer is built (7.9 MB, no installer, no registry) | `%LOCALAPPDATA%\tauri` | `Remove-Item -Recurse -Force "$env:LOCALAPPDATA\tauri"` |
 
 `rustup-init` was run with `--no-modify-path`, so **the user's PATH environment variable
 was not touched**. Build commands put the toolchain on PATH for that one process only.
@@ -34,9 +39,23 @@ when it stops, when it is killed (by the watchdog), or by `restore-windows.ps1`.
 | U-2 | Taskbar auto-hide state | `SHAppBarMessage(ABM_SETSTATE)` | Restored to the **recorded original** from `baseline-windows.json`. On this machine that is auto-hide ON, which is what you already had — it is not forced to "always visible" |
 | U-3 | Desktop work area | `SystemParametersInfo(SPI_SETWORKAREA)` **without** `SPIF_SENDCHANGE`, reserving 63px at the top for the top bar | Reset to the full screen *with* the broadcast, so every app re-lays-out |
 
-Nothing else is touched. In particular: no startup entry has been created (PHASE 6 was
-not reached), no wallpaper was changed, no theme setting was changed, and no shortcut
-or key binding was added, removed or remapped anywhere.
+### Opt-in changes (PHASE 6) — nothing here happens unless you press a button
+
+| # | What | Changed how | Restored how |
+|---|---|---|---|
+| U-4 | Startup entry: "Open macui when I sign in" | A shortcut written to `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\macui.lnk`. **No registry key.** | Turn the switch off, delete that one file, disable it in Task Manager > Startup, or run `restore-windows.ps1` |
+| U-5 | Desktop wallpaper | `SystemParametersInfo(SPI_SETDESKWALLPAPER)`. This is the one change Windows *persists*, which is why it is opt-in. The previous path is recorded in `settings.json` as `originalWallpaper` **before** anything changes | "Put my own wallpaper back" in settings, "Return to normal Windows", or `restore-windows.ps1`. All three read the recorded path and then clear it |
+
+The image itself is unpacked from inside the executable to
+`%APPDATA%\macui\macui-warm-*.png`, because Windows needs a real file path to point at.
+Deleting that folder after restoring your own wallpaper removes every trace.
+
+Nothing else is touched. In particular: no theme setting is changed, and **no shortcut
+or key binding is added, removed or remapped anywhere** — this app installs no keyboard
+hook of any kind.
+
+Neither U-4 nor U-5 is on by default, and neither has been left on: both were switched
+on, verified, and switched off again during testing.
 
 ### A note on the two shortcuts the UI sends
 The Start button sends **Ctrl+Esc**, and the top bar sends **Win+A** / **Win+N**, through
@@ -52,11 +71,30 @@ power loss on next boot — is covered.
 
 ---
 
-## 3. Files created outside the project folder
+## 3. If you run the installer (optional)
+
+`src-tauri/target/release/bundle/nsis/macui_0.1.0_x64-setup.exe` installs **per user**,
+with no UAC prompt. Verified by installing and uninstalling it:
+
+| What it does | Where | Undo |
+|---|---|---|
+| Copies `macui.exe`, `WebView2Loader.dll` and `uninstall.exe` | `%LOCALAPPDATA%\macui` | `%LOCALAPPDATA%\macui\uninstall.exe` (add `/S` for silent) |
+| Writes the Add/Remove Programs entry Windows expects | `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\macui` | removed by the same uninstaller |
+
+Checked after uninstalling: the registry entry was gone and the folder held nothing but
+`macui.log`, this app's own runtime log, which is yours to delete. You do not have to
+run the installer at all — the `.exe` in `src-tauri/target/release` runs as it stands.
+
+---
+
+## 4. Files created outside the project folder
 
 - `%LOCALAPPDATA%\macui-toolchain\dl\mingw.zip` — downloaded installer archive, safe to
   delete after the toolchain is extracted.
 - `%LOCALAPPDATA%\macui-toolchain\dl\rustup-init.exe` — same.
 
-Future runtime settings will live in `%APPDATA%\macui\settings.json`; deleting that
-folder resets the app to defaults and affects nothing else.
+- `%APPDATA%\macui\settings.json` — every setting the app has. Deleting it resets the
+  app to defaults and affects nothing else on the machine.
+- `%APPDATA%\macui\macui-warm-*.png` — only if you accepted one of the bundled
+  wallpapers (U-5).
+- `%LOCALAPPDATA%\macui\macui.log` — runtime log, truncated at 1 MB.

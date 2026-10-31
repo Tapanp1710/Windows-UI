@@ -230,6 +230,20 @@ let currentVolume = 50;
 // already focused — harmless, and it makes the pill feel live rather than decorative.
 appPill.addEventListener("click", () => void invoke("cmd_focus_foreground"));
 
+/**
+ * Right-clicking any pill opens the settings window.
+ *
+ * The top bar is only 56px tall and its window clips anything drawn outside it, so a
+ * popup menu here would need the same window-growing dance the dock does for one
+ * entry. Opening settings directly is the whole of that menu anyway, and it gives a
+ * second reachable route to Quit while the Windows taskbar - and with it the tray
+ * icon - is hidden.
+ */
+document.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  void invoke("cmd_open_settings");
+});
+
 /* --------------------------------------------------------------- startup */
 
 async function applyPrefs(): Promise<void> {

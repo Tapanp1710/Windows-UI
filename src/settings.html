@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>macui settings</title>
+    <!-- Same diagnostics channel as the dock: these windows have no console, so a
+         load failure is reported through the window title, readable from outside. -->
+    <script>
+      window.__diag = [];
+      function __report(kind, msg) {
+        window.__diag.push(kind + ": " + msg);
+        document.title = "macui settings [" + window.__diag.join(" | ").slice(0, 180) + "]";
+        // wry does not mirror document.title onto the native window, so the title
+        // above cannot be read from outside. Push it into the app's own log file,
+        // which can. Guarded: this runs before the Tauri API module has loaded.
+        try {
+          window.__TAURI_INTERNALS__.invoke("cmd_log", { msg: "[settings] " + kind + ": " + msg });
+        } catch (e) {}
+      }
+      addEventListener(
+        "error",
+        function (e) {
+          if (e.target && e.target !== window && e.target.tagName) {
+            __report("LOAD-FAIL", e.target.tagName + " " + (e.target.src || e.target.href));
+          } else {
+            __report("ERR", e.message + " @" + e.lineno);
+          }
+        },
+        true,
+      );
+      addEventListener("unhandledrejection", function (e) {
+        __report("REJECT", String(e.reason));
+      });
+    </script>
+    <link rel="stylesheet" href="./shared/theme.css" />
+    <link rel="stylesheet" href="./settings/settings.css" />
+  </head>
+  <body>
+    <div class="card glass">
+      <!-- No native title bar, so the header is the drag handle. data-tauri-drag-region
+           is Tauri's own hit-test attribute; the close dot sits outside it. -->
+      <header class="head" data-tauri-drag-region>
+        <div class="titles" data-tauri-drag-region>
+          <h1 data-tauri-drag-region>Settings</h1>
+          <p class="sub" id="sub" data-tauri-drag-region></p>
+        </div>
+        <button id="close" class="dot-close" title="Close" aria-label="Close"></button>
+      </header>
+
+      <div class="body" id="body">
+        <section>
+          <h2>Appearance</h2>
+
+          <div class="row">
+            <label for="theme">Theme</label>
+            <div class="seg" id="theme" role="radiogroup" aria-label="Theme">
+              <button data-value="auto">Follow Windows</button>
+              <button data-value="light">Light</button>
+              <button data-value="dark">Dark</button>
+            </div>
+          </div>
+
+          <div class="row">
+            <label for="iconShape">Icon shape</label>
+            <div class="seg" id="iconShape" role="radiogroup" aria-label="Icon shape">
+              <button data-value="circle">Circle</button>
+              <button data-value="squircle">Squircle</button>
+              <button data-value="rounded">Rounded</button>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2>Dock</h2>
+
+          <div class="row">
+            <label for="dockEnabled">Show the dock</label>
+            <input type="checkbox" class="switch" id="dockEnabled" />
+          </div>
+          <div class="row">
+            <label for="dockAlwaysVisible">Always visible</label>
+            <input type="checkbox" class="switch" id="dockAlwaysVisible" />
+          </div>
+          <p class="note">
+            Off means it behaves like an auto-hidden Windows taskbar: touch the bottom
+            edge of the screen to bring it up.
+          </p>
+          <div class="row">
+            <label for="dockMagnification">Magnify icons on hover</label>
+            <input type="checkbox" class="switch" id="dockMagnification" />
+          </div>
+          <div class="row">
+            <label for="dockIconSize">Icon size</label>
+            <span class="slide">
+              <input type="range" id="dockIconSize" min="32" max="64" step="2" />
+              <output id="dockIconSizeOut"></output>
+            </span>
+          </div>
+        </section>
+
+        <section>
+          <h2>Top bar</h2>
+          <div class="row">
+            <label for="topbarEnabled">Show the top bar</label>
+            <input type="checkbox" class="switch" id="topbarEnabled" />
+          </div>
+          <div class="row">
+            <label for="topbarAutoHide">Auto-hide it</label>
+            <input type="checkbox" class="switch" id="topbarAutoHide" />
+          </div>
+          <p class="note">
+            While the top bar is shown, maximised windows stop below it — exactly as
+            they stop above the Windows taskbar. Auto-hiding it gives that strip back.
+          </p>
+        </section>
+
+        <section>
+          <h2>Motion</h2>
+          <div class="row">
+            <label for="animationSpeed">Animation speed</label>
+            <span class="slide">
+              <input type="range" id="animationSpeed" min="0" max="2" step="0.25" />
+              <output id="animationSpeedOut"></output>
+            </span>
+          </div>
+          <p class="note" id="animNote"></p>
+        </section>
+
+        <section>
+          <h2>Wallpaper</h2>
+          <p class="note">
+            Original artwork included with this project. Nothing is applied unless you
+            choose it here, and your current wallpaper is remembered so you can go back.
+          </p>
+          <div class="papers">
+            <button class="paper" data-paper="light">
+              <img src="/wallpaper/macui-warm-light-320x180.png" alt="" />
+              <span>Warm light</span>
+            </button>
+            <button class="paper" data-paper="dark">
+              <img src="/wallpaper/macui-warm-dark-320x180.png" alt="" />
+              <span>Warm dark</span>
+            </button>
+          </div>
+          <button class="wide" id="paperRestore">Put my own wallpaper back</button>
+        </section>
+
+        <section>
+          <h2>Startup</h2>
+          <div class="row">
+            <label for="startAtLogin">Open macui when I sign in</label>
+            <input type="checkbox" class="switch" id="startAtLogin" />
+          </div>
+          <p class="note" id="startupNote">
+            Adds a shortcut to your own Startup folder. No registry keys, no admin
+            rights, and you can remove it here or from Task&nbsp;Manager.
+          </p>
+        </section>
+
+        <section>
+          <h2>Leaving</h2>
+          <button class="wide" id="restart">Restart the UI</button>
+          <button class="wide danger" id="normal">Return to normal Windows</button>
+          <p class="note">
+            Returning to normal Windows brings back the Windows taskbar, the work area
+            and your wallpaper, then quits. It runs the same code as
+            <code>restore-windows.ps1</code>.
+          </p>
+        </section>
+
+        <p class="path" id="path"></p>
+      </div>
+    </div>
+    <script type="module" src="./settings/settings.ts"></script>
+  </body>
+</html>

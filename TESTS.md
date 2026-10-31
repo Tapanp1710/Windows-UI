@@ -160,5 +160,80 @@ N/A — not started. Will verify Alt+Tab, Alt+Shift+Tab, Esc, Win+Tab, virtual d
 N/A — not started.
 
 ## PHASE 6 — Settings, startup, packaging
-Partial — settings *storage* works and is used by the dock; no settings UI, no startup
-entry, no installer yet.
+
+All run against the release build on 2026-10-31, by driving a real mouse pointer with
+`scripts/cursor.ps1` and reading the screenshots back.
+
+### Settings window
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 6.1 | Opens from the dock's right-click menu | PASS | the "Settings…" placeholder is now live |
+| 6.2 | Opens from a right-click on any top-bar pill | PASS | second reachable route while the taskbar is hidden |
+| 6.3 | Opens from the tray menu | **UNTESTABLE** | the item exists and is wired, but the notification area is inside the taskbar we hide — see D-016 |
+| 6.4 | Window renders | PASS | only after a real bug was fixed: built from a *sync* command, the WebView2 controller came up 0x0 and hidden and nothing ever painted. Window creation now happens in an async command (D-012) |
+| 6.5 | Card is legible over a bright window | PASS | failed first: 12% transparency let a code editor's text show through its own. Fixed with an opaque surface token (D-014) |
+| 6.6 | Scrollbar matches the panel | PASS | failed first: Chromium ignores `::-webkit-scrollbar` once `scrollbar-width` is set, leaving a white track. Standard properties only now |
+| 6.7 | Closes with the close dot | PASS | WebView2 process count back to 7 |
+| 6.8 | Closes with Escape | PASS | |
+| 6.9 | Dragging by the header moves it | PASS | `data-tauri-drag-region`; the close dot is outside it |
+| 6.10 | Costs nothing while closed | PASS | created on demand, destroyed on close (D-012) |
+
+### Settings that actually change something
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 6.11 | Theme → Light applies live | PASS | dock and settings window both switched without a restart |
+| 6.12 | Theme → Follow Windows applies live | PASS | |
+| 6.13 | Dock "Always visible" applies live | PASS | dock stayed up with the pointer at (400,600). This setting was stored but **never read** before this phase |
+| 6.14 | Icon size slider | PASS | written on release, not on every drag pixel; `--dock-icon` was likewise stored-but-unread before |
+| 6.15 | Values survive a restart | PASS | read back from `settings.json` |
+| 6.16 | A settings write cannot clobber the pin order | PASS | the window sends a patch of changed keys, never the whole struct |
+
+### Startup entry
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 6.17 | Switch on creates the shortcut | PASS | `%APPDATA%\...\Startup\macui.lnk` |
+| 6.18 | Shortcut points at the right exe | PASS | target + working directory + description all correct |
+| 6.19 | Switch off deletes it | PASS | |
+| 6.20 | No registry key written | PASS | `HKCU\...\Run` untouched (D-013) |
+| 6.21 | `restore-windows.ps1` removes it | PASS | it also clears a stray `Run` value defensively |
+
+### Wallpaper
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 6.22 | Nothing applied unless asked | PASS | the brief's "offered, not force-applied" |
+| 6.23 | Applying unpacks and sets it | PASS | unpacked from inside the exe to `%APPDATA%\macui` |
+| 6.24 | Original recorded before changing | PASS | `originalWallpaper` captured the Windows Spotlight path |
+| 6.25 | "Put my own wallpaper back" restores it | PASS | byte-identical path, record cleared |
+| 6.26 | Switching between our two does not overwrite the record | PASS | recorded once only |
+| 6.27 | "Return to normal Windows" restores it too | PASS | wallpaper, taskbar, work area, then exit |
+
+### Leaving
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 6.28 | "Restart the UI" | PASS | new pid, new watchdog, taskbar hidden again |
+| 6.29 | "Return to normal Windows" | PASS | 0 macui processes, 0 WebView2 processes, taskbar visible, **taskbar state 1 = the user's own auto-hide**, work area full, wallpaper restored |
+| 6.30 | Hard kill with the settings window open | PASS | watchdog restored the taskbar; no orphan processes |
+| 6.31 | Killing *every* macui process at once | FAIL (known) | takes the watchdog too; `restore-windows.ps1` recovers it. Documented in SYSTEM_CHANGES "Known gap" — unchanged by this phase |
+
+### Packaging
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 6.32 | NSIS installer builds on the MinGW toolchain | PASS | the GNU target was no obstacle; Tauri fetched NSIS itself, no admin prompt (T-3) |
+| 6.33 | Installer runs without UAC | PASS | `installMode: currentUser`, installed to `%LOCALAPPDATA%\macui` |
+| 6.34 | Installed copy works | PASS | launched, hid the taskbar, behaved identically |
+| 6.35 | Uninstaller removes everything it added | PASS | registry entry gone; only our own `macui.log` left behind |
+| 6.36 | Portable use still possible | PASS | the loose `.exe` runs with no install at all |
+
+### Resources (idle, 30 s, dock + top bar, settings closed)
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 6.37 | Private bytes across the whole tree | **PASS** | **200.4 MB**, against the revised 250 MB target. 9 processes: 2 ours, 7 WebView2 |
+| 6.38 | Idle CPU | PASS | 0.104% across 8 cores |
+| 6.39 | Settings window adds nothing at idle | PASS | 210.6 MB with it open, 200.4 MB after closing — it leaves no residue |
+
+### Windows behaviour
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 6.40 | No keyboard hook added | PASS | this phase installs none; grep for `SetWindowsHookEx` returns nothing in the whole project |
+| 6.41 | Settings window behaves like a normal window | PASS | appears in Alt+Tab, focusable, closable — it is not always-on-top and steals nothing |
+| 6.42 | Unit tests | PASS | 2 passed (`startup::lnk_path_is_under_the_users_startup_folder`, `watchdog::parses_watchdog_invocation`) |

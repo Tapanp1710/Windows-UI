@@ -16,6 +16,7 @@ export default defineConfig({
       input: {
         dock: resolve(__dirname, "src/dock.html"),
         topbar: resolve(__dirname, "src/topbar.html"),
+        settings: resolve(__dirname, "src/settings.html"),
       },
     },
   },

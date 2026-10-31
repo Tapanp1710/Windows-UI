@@ -30,6 +30,12 @@ pub struct Settings {
     pub theme: String,
     /// Multiplier on every animation duration. 1.0 = the designed timings.
     pub animation_speed: f64,
+
+    /// Whatever Windows had as its wallpaper before the user accepted ours, so the
+    /// settings window and `restore-windows.ps1` can put it back. `None` means we
+    /// have not changed it.
+    #[serde(default)]
+    pub original_wallpaper: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +64,7 @@ impl Default for Settings {
             icon_shape: "circle".into(),
             theme: "auto".into(),
             animation_speed: 1.0,
+            original_wallpaper: None,
         }
     }
 }

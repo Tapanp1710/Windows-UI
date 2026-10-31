@@ -2,13 +2,14 @@
 
 Written for: you, the laptop's owner, on waking up.
 
-**Short version:** STEP 0, PHASE 1 (dock) and PHASE 2 (top bar) are built, tested and
-committed. PHASES 3–6 (launcher, window switcher, widgets, settings UI + installer) are
-**not built**. Everything that is built has been verified by actually running it and
-reading screenshots back, not assumed. Your Windows taskbar always comes back.
+**Short version:** STEP 0, PHASE 1 (dock), PHASE 2 (top bar) and **PHASE 6 (settings
+window, tray menu, startup entry, wallpaper, NSIS installer)** are built, tested and
+committed. PHASES 5, 4 and 3 (widgets, window switcher, launcher) are **not built**.
+Everything that is built has been verified by running it and reading screenshots back,
+not assumed. Your Windows taskbar always comes back.
 
-Two things need your judgement, both flagged below: **memory use is over target** and
-**animation smoothness needs a human eye**.
+**Memory is now inside target**: 200.4 MB private bytes across the whole process tree,
+against the revised 250 MB. **Animation smoothness still needs your eye** — see §3.
 
 ---
 
@@ -56,6 +57,26 @@ runs fine; **App Control for Business does not block it**.
   The top strip of your screen is not stolen.
 - 63px is reserved at the top so **maximised windows stop below the bar**.
 
+### PHASE 6 — Settings, startup and packaging
+- **A real settings window**, in the same floating-island style. Right-click the dock
+  background, or right-click any top-bar pill. Every control writes straight through —
+  there is no Apply button and nothing to lose by closing it.
+- **Live, no restart:** theme, icon shape, dock on/off, always-visible, magnification,
+  icon size, top bar on/off and its reserved strip, animation speed.
+- Two settings that had been stored and then **never read** — "always visible" and icon
+  size — actually work now. The settings window is what made that visible.
+- **"Open macui when I sign in"**, a shortcut in your own Startup folder. No registry
+  key; removable by deleting one file or from Task Manager > Startup.
+- **The wallpaper the brief asked for** — original warm amber artwork, two variants,
+  *offered* and never applied unless you press it. Your current wallpaper is recorded
+  first, and "Put my own wallpaper back" restores it exactly.
+- **"Return to normal Windows"** — taskbar, work area and wallpaper restored, then quit.
+  It runs the same code as `restore-windows.ps1`.
+- **A per-user NSIS installer, 7.1 MB, with no UAC prompt.** I installed it, ran the
+  installed copy, uninstalled it, and checked what was left: the registry entry gone,
+  nothing in the folder but this app's own log. You do not have to use it — the loose
+  `.exe` still runs as it stands.
+
 ### Safety — the part that matters most
 - The taskbar is restored on a clean exit.
 - A **watchdog process** restores it if the app is hard-killed. Verified repeatedly:
@@ -72,12 +93,13 @@ runs fine; **App Control for Business does not block it**.
 |---|---|
 | **Quick Settings panel** (Wi-Fi, Bluetooth, volume, battery) | The brief requires clicking these to open *the same* Windows flyout. A hand-drawn replacement would be a different panel with different behaviour. Our icons open Windows' own. |
 | **Calendar / notification centre** | Same reasoning. |
-| **Start menu** | PHASE 3 was not reached, so the Start button opens the real Start menu (via Ctrl+Esc). It *sends* a shortcut rather than intercepting one, so no Windows key binding is altered. |
+| **Start menu** | PHASE 3 is not built yet, so the Start button opens the real Start menu (via Ctrl+Esc). It *sends* a shortcut rather than intercepting one, so no Windows key binding is altered. |
 | **Jump lists** | Reading another app's jump list means parsing undocumented files with no supported API. The menu offers launch / pin / unpin / close instead. (D-005) |
 | **Progress & attention indicators** | Receiving these means *being* the registered shell taskbar, not drawing one. The visuals are implemented and correct, but nothing can feed them from a normal app. (D-006) |
 | **Pin order** | Windows stores taskbar pin order in an undocumented registry blob. Pins import alphabetically; drag to reorder and it sticks. (D-004) |
 | **System Acrylic blur** | `backdrop-filter` cannot blur the desktop through a transparent window, and real Acrylic fills a rectangle — which would square off every rounded pill and kill the shadow. Took the brief's documented fallback: more opaque surfaces. (D-009) |
-| **Tray icon** | It exists, but it lives in the notification area *inside* the taskbar we hide, so it is unreachable. Right-clicking the dock gives you Settings / Restart / Quit instead. |
+| **Tray icon** | It exists, with Settings / Restart UI / Return to normal Windows / Quit — but the notification area lives *inside* the taskbar we hide, so it cannot be clicked while the UI layer is running. Making it reachable would mean becoming the registered shell taskbar, the same wall as progress indicators. The identical menu is one right-click away on the dock background or on any top-bar pill. (D-016) |
+| **Top bar auto-hide** | The switch exists and correctly gives the reserved strip back, but the bar does not yet slide away on a timer. It is honest as "reserve screen space: yes/no" until PHASE 5. |
 
 ---
 
@@ -85,60 +107,52 @@ runs fine; **App Control for Business does not block it**.
 
 ### Needs your judgement
 
-1. **Memory is over target.** The brief asked for under 150 MB.
-   - Measured with both bars running and idle: **202 MB private bytes, 442 MB working
-     set** across 9 processes (2 ours + 7 WebView2).
-   - Working set overstates it badly — Chromium's shared binaries are counted once per
-     process. **Private bytes (~202 MB) is the fair number.**
-   - This is inherent to the stack *you specified*: Tauri renders through WebView2,
-     which is Chromium, and its fixed overhead (browser + GPU + utility processes) is
-     roughly 250 MB of working set before our code does anything. Each extra window
-     adds a renderer (~60 MB working set, ~25 MB private).
-   - **The 150 MB target is not reachable with Tauri + WebView2 for a multi-window
-     shell.** My earlier figure of 38 MB was wrong — it counted only our own two
-     processes and not the WebView2 runtime doing the rendering. Correcting that here
-     rather than leaving a flattering number in the log.
-   - **Concrete fix if you want it:** merge every panel into ONE window spanning the
-     screen and use the hit-test-region trick already working in the top bar. That
-     collapses N renderers into one and would save roughly 60 MB per panel removed.
-     It also removes the window-resizing dance the dock does for tooltips. I did not do
-     it because it is a sizeable refactor and I would rather hand you something working.
-
-2. **Animation smoothness.** Frame bursts show **no flicker, no blank frames and no
+1. **Animation smoothness.** Frame bursts show **no flicker, no blank frames and no
    position jumps**, and the start and end states are correct. But the capture rig only
    manages ~50–65 ms per frame, so a 250 ms animation is sampled 4–5 times. That proves
    the absence of gross faults; it **cannot prove it feels smooth**. Please watch the
    dock slide up and down a few times.
 
-3. **Glass look.** Because real desktop blur is not available (see §2), the surfaces are
-   fairly opaque. Check whether that reads as "glass" to you or just "dark panel". The
-   opacity is one value in `src/shared/theme.css` (`--glass-bg`).
+2. **Glass look.** Because real desktop blur is not available (see §2), the surfaces are
+   translucent over an *unblurred* background. On the dock and top bar that reads as
+   glass; it is one value in `src/shared/theme.css` (`--glass-bg`) if you disagree.
+   The settings window is deliberately **opaque** — at that size, 12% transparency let
+   a code editor's text show through its own words. (D-014)
 
 ### Known limitations
+- **Memory is inside the revised target but not small.** 200.4 MB private bytes idle.
+  Roughly 250 MB of working set is WebView2's fixed cost (browser, GPU and utility
+  processes) before any of my code runs, and each live window adds a renderer. The one
+  change that would cut it meaningfully is to **merge every panel into a single
+  screen-sized window** and use the hit-test-region trick already working in the top
+  bar — one renderer instead of N, about 60 MB of working set saved per panel removed.
+  You asked me not to do that now; it is recorded here as the option it is.
 - **Multi-monitor is untested** — this laptop has one display.
-- Killing the *whole process tree* at once (e.g. "End process tree" in Task Manager)
-  kills the watchdog too, so the taskbar stays hidden until you run
-  `restore-windows.ps1`. Every other kill path is covered.
+- Two settings (dock "always visible" and icon size) had been written to disk since
+  PHASE 1 and were never read by anything until this phase. They work now. I mention it
+  because it is the kind of thing a settings window exposes and a settings file hides.
 - Wi-Fi **signal strength and SSID** are not shown; the icon shows connected/not. Full
   signal detail needs the WLAN API, which was not worth the surface area for one glyph.
 - The tray-overflow chevron falls back to Quick Settings on Windows 11, where the
   overflow is a XAML host with no clickable child window.
-- The "Settings…" item in the dock's right-click menu is a disabled placeholder —
-  PHASE 6 was not reached. Settings are real and respected, but only editable by hand
-  in `%APPDATA%\macui\settings.json`.
+- Killing **every** macui process at once (selecting them all in Task Manager) takes
+  the watchdog with them, so the taskbar stays hidden until you run
+  `restore-windows.ps1`. Every other kill path — including a hard kill of the main
+  process with the settings window open, which I retested — is covered.
 
 ### Your machine is not the machine in the brief
 The brief described an ASUS X515EA (i5-1135G7, 12 GB, Windows 11 24H2 / build 26100).
 This machine is **Windows 11 build 22631 (23H2), 7.9 GB RAM, Intel UHD 620**, running
 **1920×1080 at 150% scaling** (so the logical desktop is 1280×720). Nothing broke
-because of it, but the 150% scaling affects every layout number, and the lower RAM makes
-the memory finding above more important, not less.
+because of it, but the 150% scaling affects every layout number, and with 7.9 GB of RAM
+the 200 MB this costs is a larger slice of your machine than it would have been on the
+12 GB one in the brief.
 
 ---
 
 ## 4. Decisions I made on my own
 
-Eleven, all in **[DECISIONS.md](DECISIONS.md)**. The ones that would change your plans:
+Sixteen, all in **[DECISIONS.md](DECISIONS.md)**. The ones that would change your plans:
 
 - **D-001** — continued past the missing MSVC toolchain using a no-admin GNU path,
   instead of stopping as STEP 0 says. Stopping would have delivered nothing, and the
@@ -148,6 +162,14 @@ Eleven, all in **[DECISIONS.md](DECISIONS.md)**. The ones that would change your
 - **D-009** — no system Acrylic; higher-opacity surfaces (see §2).
 - **D-010** — reserved the work area with a silent `SPI_SETWORKAREA`. The appbar route
   worked but un-hid the taskbar.
+- **D-013** — the startup entry is a shortcut in your Startup folder, not a registry Run
+  value, so this app still writes **no registry keys at all**.
+- **D-014** — the settings window is opaque, breaking the glass look on purpose. It is
+  the one surface you have to read rather than glance at.
+- **D-015** — **Quit** leaves a wallpaper you chose in place; **Return to normal
+  Windows** puts your original back. Two different promises, two different buttons.
+- **D-016** — the tray icon is built as asked but cannot be clicked while the taskbar is
+  hidden, so the same menu lives on the dock and the top bar too.
 
 ---
 
@@ -159,14 +181,28 @@ cd C:\Users\ADMIN\OneDrive\Desktop\ui
 .\src-tauri\target\release\macui.exe
 ```
 
-### Settings
-Right-click the **dock background** (not an icon) → Settings / Restart UI / Quit.
-There is no settings window yet; edit `%APPDATA%\macui\settings.json` and restart.
-Useful keys: `iconShape` (`circle`/`squircle`/`rounded`), `theme` (`auto`/`light`/`dark`),
-`dockAlwaysVisible`, `dockMagnification`, `animationSpeed`, `topbarEnabled`.
+### Install it (optional)
+```powershell
+.\src-tauri\target\release\bundle\nsis\macui_0.1.0_x64-setup.exe
+```
+Per-user, **no administrator prompt**. Installs to `%LOCALAPPDATA%\macui`. Uninstall
+from Settings > Apps, or run `%LOCALAPPDATA%\macui\uninstall.exe`. You do not need to
+install it at all — the `.exe` above runs as it stands.
+
+### Open settings
+Right-click the **dock background** (not an icon), or right-click **any top-bar pill**,
+then choose **Settings…**. Escape or the dot in the corner closes it. Everything saves
+as you change it. The file behind it is `%APPDATA%\macui\settings.json` if you ever want
+to edit it by hand.
+
+### Start it automatically
+Settings → Startup → **"Open macui when I sign in"**. That writes one shortcut into your
+own Startup folder; switching it off deletes it.
 
 ### Turn it off
 Right-click the dock background → **Quit**. This always restores the taskbar.
+Settings → Leaving → **"Return to normal Windows"** does the same *and* puts your
+wallpaper back.
 
 ### Fully restore normal Windows (works even after a crash)
 ```powershell
@@ -178,15 +214,19 @@ anything was touched (your taskbar was already set to auto-hide, and that is pre
 
 ### Uninstall completely
 ```powershell
+# if you installed it:
+& "$env:LOCALAPPDATA\macui\uninstall.exe"
+# then, in any case:
 powershell -ExecutionPolicy Bypass -File .\restore-windows.ps1 -RemoveToolchain
-Remove-Item -Recurse -Force "$env:APPDATA\macui", "$env:LOCALAPPDATA\macui"
+Remove-Item -Recurse -Force "$env:APPDATA\macui", "$env:LOCALAPPDATA\macui", "$env:LOCALAPPDATA\tauri"
 ```
-Then delete the project folder. No installer was produced (PHASE 6 not reached), so
-nothing is registered with Windows — there is nothing in Add/Remove Programs.
+Then delete the project folder. If you never ran the installer, nothing is registered
+with Windows at all and there is nothing in Add/Remove Programs.
 
 ### Rebuild after changes
 ```bash
-scripts/build.sh
+scripts/build.sh        # the exe
+npm run tauri build     # the exe plus the installer
 ```
 **Do not use a bare `cargo build --release`** — Tauri computes `dev = !custom_protocol`,
 so without the feature flag you get a binary that loads the Vite dev server and shows a
@@ -196,34 +236,45 @@ blank window. That cost a long detour; the script handles it.
 
 ## 6. Resource usage (idle, measured)
 
+Measured over 30 s, both bars running, settings window closed.
+
 | Metric | Value | Target | Verdict |
 |---|---|---|---|
-| Idle CPU | **0.09%** across 9 processes (8 cores) | near-0% | **met** |
-| Private bytes | **202.6 MB** | under 150 MB | **over** (see §3.1) |
-| Working set | **441.8 MB** | — | inflated by Chromium's shared pages |
-| Our own processes | 2 (dock/top-bar host + watchdog), ~38 MB | — | |
+| Idle CPU | **0.104%** across 9 processes (8 cores) | near-0% | **met** |
+| Private bytes | **200.4 MB** | under 250 MB | **met** |
+| Working set | **453.7 MB** | — | inflated by Chromium's shared pages |
+| Our own processes | 2 (dock/top-bar host + watchdog) | — | |
 | WebView2 processes | 7, the rest | — | fixed cost of the stack |
+| With the settings window open | 210.6 MB private | — | returns to 200.4 MB on close |
 
 CPU is genuinely idle: auto-hide samples the cursor ~20×/s, the dock refreshes once a
 second, and the top bar every two seconds. No hooks are installed anywhere in the system.
 
 ---
 
-## 7. Suggested next improvements, in the order I would do them
+## 7. What is next
 
-1. **Merge the panels into one window** (see §3.1). Biggest memory win available, and it
-   simplifies the popup handling the dock currently does by resizing its window.
-2. **PHASE 6 before PHASES 3–5.** A settings window and a startup entry make what already
-   exists genuinely usable; another panel does not. It would also replace that disabled
-   "Settings…" placeholder.
-3. **PHASE 4 (Alt+Tab) before PHASE 3 (launcher).** The switcher needs DWM thumbnails,
-   which the dock's grouped-window chooser also wants — one piece of work, two payoffs.
-   The launcher is the riskiest phase (capturing the Win key without breaking Win+E,
-   Win+R, Win+L and friends) and should be last.
-4. **Multi-monitor support.** Untestable here, but the code assumes one display in
+The agreed build order from here is **PHASE 5 (widgets) → PHASE 4 (window switcher) →
+PHASE 3 (launcher)**, which is what I will work through. The launcher is last by design:
+capturing the Win key without breaking Win+E, Win+R, Win+L and the rest is the riskiest
+thing in the brief, and PHASE 4 builds the DWM thumbnail code that both it and the
+dock's window chooser want.
+
+For both keyboard phases, the rules are: if the hook fails, is not installed, or an
+elevated window has focus, **Windows' own behaviour must work** — tested explicitly,
+including killing the app mid-Alt+Tab with Alt still held down. If any Win-key
+combination breaks, Start stays on the Win key and it gets logged.
+
+Beyond the remaining phases:
+
+1. **Merge the panels into one window.** The biggest memory win still available — one
+   WebView2 renderer instead of one per panel, roughly 60 MB of working set each. You
+   have parked this; it is recorded here, not forgotten.
+2. **Multi-monitor support.** Untestable here, but the code assumes one display in
    several places (`screen_size()` callers in particular).
-5. **Feed the progress and attention indicators**, if you ever want them — this needs a
-   registered shell taskbar, so it is a much bigger change than it looks (D-006).
+3. **Make the tray icon reachable**, which means our own notification area, which means
+   being the registered shell taskbar — the same wall as D-006. Probably not worth it.
+4. **Feed the progress and attention indicators**, same wall again (D-006).
 
 ---
 
