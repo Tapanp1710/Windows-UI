@@ -504,3 +504,88 @@ through undocumented interfaces would break on a Windows update, in a part of th
 system the user cannot easily recover.
 
 Alt+Tab is restyled; Win+Tab opens Windows' own, exactly as before.
+
+---
+
+## D-029 — Only the Win key's *release* is ever touched
+**Date:** 2026-10-31 · **Phase:** 3
+
+Windows opens Start on the Win key's **release**, and only when nothing else was
+pressed while it was held. That is the whole of the opening, and it is the only part
+this touches.
+
+**Decision:** pass the Win key*down* through untouched, always. Track whether anything
+else happened during the press. On release, swallow it **only** if nothing did, and
+open the launcher instead.
+
+Why it matters: `Win+E`, `Win+R`, `Win+L`, `Win+Shift+S`, `Win+1`, `Win+arrow` and
+every other combination reach Windows exactly as they always did, because the hook
+never sees them as anything but "something else was pressed". The alternative -
+swallowing the keydown and re-synthesising it whenever a combination turns up - means
+injecting a keystroke from inside the hook callback with the combination's own
+keystroke already in flight. That is the version of this that breaks `Win+L`.
+
+A mouse click during the press counts as "used" too, because Windows treats it that
+way.
+
+**This is not yet verified by test.** `scripts/winkey-matrix.ps1` sends every
+combination and reports what Windows did; it was written for exactly this and has not
+been run to completion, because it takes over the keyboard for about a minute and the
+machine was in use. Until it has been run, the argument above is reasoning, not
+evidence. One switch in settings hands the Win key back.
+
+---
+
+## D-030 — The launcher lists `shell:AppsFolder`, and takes icons from the items
+**Date:** 2026-10-31 · **Phase:** 3
+
+Walking the Start Menu folders for `.lnk` files misses every Store and packaged app,
+because those have no shortcut on disk. The AppsFolder is the shell's own list and
+includes them, with a parsing name `ShellExecuteW` can launch directly.
+
+**Decision:** enumerate `shell:AppsFolder`, and take each icon from the `IShellItem`
+that enumeration already hands back - *not* by looking the name up again afterwards.
+The parsing names the AppsFolder gives out do not all round-trip through
+`SHCreateItemFromParsingName`, and fetching icons that way left almost every app with
+a blank page icon. Measured on this machine: 158 apps, every one with its real icon.
+
+The whole enumeration runs once on a background thread at startup, so the second it
+costs is spent long before the Win key is pressed.
+
+---
+
+## D-031 — The island is a shelf, not a clock
+**Date:** 2026-10-31 · **Phase:** feedback
+
+The first island showed the time, with now-playing behind a hover. You asked for the
+opposite: the time is a known quantity, and the island should carry the things that
+change and the things you are moving around.
+
+**Decision:** the clock moved to the status pill on the right, where it is always
+readable. The island now shows what is playing, and acts as a **shelf**: drop files,
+folders or images on it and they stay parked until you drag them somewhere else.
+
+Items are **references, not copies**. Parking something costs nothing, dragging it off
+hands over the real path, and nothing is duplicated on disk.
+
+Dragging an item *out* could not be done from the web side at all - HTML drag-and-drop
+has no way to hand a filesystem path to a native drop target - so a drag that leaves
+the island hands over to a real OLE drag in Rust (`win/dragout.rs`), carrying the same
+`CF_HDROP` payload Explorer itself uses. The data object is the shell's own, through
+`IShellItemArray::BindToHandler`, which is nine interface methods not written by hand.
+
+`DoDragDrop` runs on the **main thread**, synchronously. It has to be called from the
+thread that owns the window the drag started in; from a pool thread it simply never
+completed. It blocks the UI until the drag ends, which is what a native drag does.
+
+---
+
+## D-032 — No native tooltips anywhere
+**Date:** 2026-10-31 · **Phase:** feedback
+
+The `title` attribute draws Windows' own tooltip: a white-bordered box in the system
+font, over a glass panel. That was the "weird white colour marking" on the top bar.
+
+**Decision:** every `title` became an `aria-label`. The information still reaches a
+screen reader; nothing is drawn. The dock, which genuinely needs tooltips, has always
+drawn its own.

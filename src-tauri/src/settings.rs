@@ -28,9 +28,16 @@ pub struct Settings {
     /// what is playing, and by itself for a moment when the volume changes, the
     /// charger goes in or out, or the track changes.
     pub island: bool,
+    /// Things parked on the island: files, folders, anything dropped there. Kept
+    /// across restarts, because a shelf you have to refill is not a shelf.
+    pub shelf: Vec<ShelfItem>,
+
     /// Our Alt+Tab. Off hands the keystroke straight back to Windows: the hook stops
     /// swallowing Tab, so the native switcher appears exactly as it always did.
     pub switcher_enabled: bool,
+    /// Our launcher on the Win key. Off means the Win key is never touched at all
+    /// and Windows Start opens exactly as it always did.
+    pub launcher_enabled: bool,
     pub dock_always_visible: bool,
     pub dock_icon_size: u32,
     pub dock_magnification: bool,
@@ -59,6 +66,19 @@ pub struct Settings {
     /// have not changed it.
     #[serde(default)]
     pub original_wallpaper: Option<String>,
+}
+
+/// One thing parked on the island.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShelfItem {
+    /// Full path for a file or folder; the window handle as text for a window.
+    pub id: String,
+    pub name: String,
+    /// "file", "folder" or "window".
+    pub kind: String,
+    #[serde(default)]
+    pub icon: Option<String>,
 }
 
 /// One widget's switch and its position, in CSS pixels from the top left of the
@@ -96,7 +116,9 @@ impl Default for Settings {
             topbar_auto_hide: true,
             topbar_app_pill: false,
             island: true,
+            shelf: Vec::new(),
             switcher_enabled: true,
+            launcher_enabled: true,
             dock_always_visible: false,
             dock_icon_size: 44,
             dock_magnification: true,

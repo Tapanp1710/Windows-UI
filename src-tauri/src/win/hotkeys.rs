@@ -7,7 +7,9 @@
 //!
 //! **What it swallows, and nothing else:**
 //!   - `Tab` while Alt is physically held — the whole point.
-//!   - `Esc` while the switcher is open — cancelling.
+//!   - `Esc` while the switcher or the launcher is open — cancelling.
+//!   - The Windows key's **release**, and only when nothing else was pressed while it
+//!     was held. See the note on the Win key below.
 //!
 //! It never swallows Alt itself. Letting Alt through means the window you are
 //! leaving sees a complete Alt press rather than a half one, so it cannot be left
@@ -22,9 +24,26 @@
 //!     restores the native switcher.
 //!   - The process dies, however it dies → the hook dies with it.
 //!
+//! ## The Win key
+//!
+//! Windows opens Start on the Win key's **release**, and only if nothing else was
+//! pressed in between. That is the hook that matters: the key*down* is passed through
+//! untouched, so `Win+E`, `Win+R`, `Win+L`, `Win+Shift+S`, `Win+1` and every other
+//! combination reach Windows exactly as they always did — this never sees them as
+//! anything but "something else was pressed".
+//!
+//! Only the release of a Win key that was pressed and let go **alone** is swallowed,
+//! which is precisely the keystroke that would have opened Start. Swallowing the
+//! key*down* instead would have meant re-synthesising it for every combination, from
+//! inside the hook callback, with the combination's own keystroke already in flight.
+//! That is the version of this that breaks Win+L.
+//!
+//! A mouse click while Win is held also counts as "used", because Windows treats it
+//! that way too.
+//!
 //! The callback therefore does the least work that can possibly answer "swallow or
-//! not": it reads two key states and pushes an enum down a channel. It never touches
-//! a window, never allocates, and never blocks.
+//! not": it reads a couple of key states and pushes an enum down a channel. It never
+//! touches a window, never allocates, and never blocks.
 
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::mpsc::Sender;
@@ -45,6 +64,10 @@ pub enum Key {
     Cancel,
     /// Alt released while the switcher is open: commit the selection.
     Commit,
+    /// The Win key was pressed and released on its own.
+    Launcher,
+    /// Escape while the launcher is open.
+    CloseLauncher,
 }
 
 static TX: OnceLock<Sender<Key>> = OnceLock::new();
@@ -54,9 +77,21 @@ static HOOK: AtomicIsize = AtomicIsize::new(0);
 /// Alt release mean anything, so it must be kept in step by the UI side.
 pub static SWITCHER_OPEN: AtomicBool = AtomicBool::new(false);
 
-/// Master switch. When false the hook passes everything through untouched, which is
-/// the setting-level way to hand Alt+Tab back to Windows.
+/// Master switch for the switcher. When false the hook stops swallowing Tab, which
+/// is the setting-level way to hand Alt+Tab back to Windows.
 pub static ENABLED: AtomicBool = AtomicBool::new(true);
+
+/// Master switch for the launcher. When false the Win key is never touched and
+/// Windows Start opens exactly as it always did.
+pub static LAUNCHER_ENABLED: AtomicBool = AtomicBool::new(true);
+/// Whether the launcher is on screen, so Escape means something.
+pub static LAUNCHER_OPEN: AtomicBool = AtomicBool::new(false);
+
+/// True while a Win key is physically held.
+static WIN_DOWN: AtomicBool = AtomicBool::new(false);
+/// True once anything else happened during this Win press, which means the release
+/// must be passed straight through.
+static WIN_USED: AtomicBool = AtomicBool::new(false);
 
 fn held(vk: i32) -> bool {
     use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
@@ -64,9 +99,55 @@ fn held(vk: i32) -> bool {
 }
 
 unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{VK_LMENU, VK_MENU, VK_RMENU, VK_SHIFT, VK_TAB};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        VK_LMENU, VK_LWIN, VK_MENU, VK_RMENU, VK_RWIN, VK_SHIFT, VK_TAB,
+    };
 
     // HC_ACTION is 0. Anything else must be passed on untouched.
+    if code == 0 {
+        let kb = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
+        let vk = kb.vkCode as u16;
+        let msg = wparam.0 as u32;
+        let down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
+        let up = msg == WM_KEYUP || msg == WM_SYSKEYUP;
+        let is_win = vk == VK_LWIN.0 || vk == VK_RWIN.0;
+
+        // --- the Win key ------------------------------------------------------
+        // Tracked on every event, whatever the master switches say, so the state
+        // can never go stale and strand a half-finished press.
+        if is_win && down {
+            // Only the FIRST keydown of a hold starts a fresh press. Holding Win
+            // repeats the keydown, and clearing "used" on each repeat would make
+            // Win+<held key> look like a bare Win press on release.
+            if !WIN_DOWN.swap(true, Ordering::Relaxed) {
+                WIN_USED.store(false, Ordering::Relaxed);
+            }
+        } else if down && WIN_DOWN.load(Ordering::Relaxed) {
+            // Something else was pressed with Win held: this is a combination, and
+            // its release must go through untouched.
+            WIN_USED.store(true, Ordering::Relaxed);
+        }
+
+        if is_win && up {
+            let used = WIN_USED.swap(false, Ordering::Relaxed)
+                // Windows also treats a click during the press as "used".
+                || crate::win::mouse_button_down();
+            WIN_DOWN.store(false, Ordering::Relaxed);
+
+            if !used && LAUNCHER_ENABLED.load(Ordering::Relaxed) {
+                send(Key::Launcher);
+                // The only keystroke taken from the Win key, and exactly the one
+                // that would have opened Start.
+                return LRESULT(1);
+            }
+        }
+
+        if down && vk == 0x1B && LAUNCHER_OPEN.load(Ordering::Relaxed) {
+            send(Key::CloseLauncher);
+            return LRESULT(1);
+        }
+    }
+
     if code == 0 && ENABLED.load(Ordering::Relaxed) {
         let kb = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
         let vk = kb.vkCode as u16;

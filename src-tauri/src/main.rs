@@ -6,6 +6,7 @@ mod autohide;
 mod dock_model;
 #[macro_use]
 mod log;
+mod launcher;
 mod settings;
 mod startup;
 mod switcher;
@@ -193,6 +194,7 @@ fn main() {
             cmd_set_widget_positions,
             cmd_widget_restore_focus,
             cmd_topbar_revealed,
+            cmd_topbar_pin,
             cmd_glass,
             cmd_radios,
             cmd_set_radio,
@@ -203,6 +205,19 @@ fn main() {
             cmd_media_art,
             cmd_switcher_slots,
             cmd_switcher_pick,
+            cmd_launcher_apps,
+            cmd_launcher_folders,
+            cmd_launcher_list_dir,
+            cmd_launcher_search,
+            cmd_launcher_open,
+            cmd_launcher_reveal,
+            cmd_launcher_close,
+            cmd_launcher_power,
+            cmd_shelf,
+            cmd_shelf_add,
+            cmd_shelf_remove,
+            cmd_shelf_open,
+            cmd_shelf_drag_out,
         ])
         .setup(|app| {
             if let Err(e) = build_tray(app.handle()) {
@@ -242,6 +257,7 @@ fn main() {
             // Only costs anything when something is actually playing.
             win::media::start();
             switcher::start(app.handle().clone());
+            launcher::warm_up();
             AUTOHIDE_RUNNING
                 .lock()
                 .unwrap()
@@ -827,6 +843,18 @@ fn cmd_topbar_revealed() -> bool {
     autohide::TOPBAR_REVEALED.load(Ordering::SeqCst)
 }
 
+/// Hold the bar down while the island is expanded.
+///
+/// The sampler keeps the bar visible while the pointer is inside the BAR's strip,
+/// which is 56px. The island is four times that when it is open, so reaching down
+/// to the shelf left that strip and the whole bar slid away from under the pointer -
+/// taking the thing being reached for with it. The page knows when the island is
+/// open; the sampler does not, so the page says so.
+#[tauri::command]
+fn cmd_topbar_pin(on: bool) {
+    autohide::TOPBAR_PINNED.store(on, Ordering::SeqCst);
+}
+
 /// Quit, always putting Windows back first.
 #[tauri::command]
 fn cmd_app_quit(app: tauri::AppHandle) {
@@ -840,9 +868,17 @@ fn cmd_app_restart(app: tauri::AppHandle) {
     app.restart();
 }
 
+/// The dock's Start button.
+///
+/// Opens our launcher when it is switched on, and the real Windows Start menu when
+/// it is not - so the button always does the thing the user expects of it.
 #[tauri::command]
-fn cmd_open_start_menu() {
-    win::press_ctrl_esc();
+fn cmd_open_start_menu(app: tauri::AppHandle) {
+    if settings::load().launcher_enabled {
+        launcher::toggle(&app);
+    } else {
+        win::press_ctrl_esc();
+    }
 }
 
 /// Resize the dock window to the island's measured size, then re-centre it.
@@ -1065,6 +1101,129 @@ fn cmd_widget_data() -> WidgetData {
     }
 }
 
+/* ------------------------------------------------------------------ shelf
+ * The island doubles as a shelf: drop files, folders or images on it and they
+ * stay there until you drag them off somewhere else. It is deliberately NOT a
+ * copy of the clipboard - things on the shelf are references, so parking a file
+ * costs nothing and dragging it off hands over the real path.
+ */
+
+#[tauri::command]
+fn cmd_shelf() -> Vec<settings::ShelfItem> {
+    settings::load().shelf
+}
+
+/// Park paths on the shelf, skipping any that are already there.
+#[tauri::command]
+fn cmd_shelf_add(paths: Vec<String>) -> Vec<settings::ShelfItem> {
+    let items: Vec<settings::ShelfItem> = paths
+        .iter()
+        .filter_map(|p| {
+            let path = std::path::Path::new(p);
+            let meta = std::fs::metadata(path).ok()?;
+            Some(settings::ShelfItem {
+                name: path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| p.clone()),
+                kind: if meta.is_dir() { "folder" } else { "file" }.into(),
+                icon: win::icons::icon_data_url(p),
+                id: p.clone(),
+            })
+        })
+        .collect();
+
+    settings::update(|s| {
+        for item in items {
+            if !s.shelf.iter().any(|e| e.id == item.id) {
+                s.shelf.push(item);
+            }
+        }
+        // A shelf is a staging area, not storage. Oldest out first.
+        let len = s.shelf.len();
+        if len > 24 {
+            s.shelf.drain(0..len - 24);
+        }
+    })
+    .shelf
+}
+
+#[tauri::command]
+fn cmd_shelf_remove(id: String) -> Vec<settings::ShelfItem> {
+    settings::update(|s| s.shelf.retain(|e| e.id != id)).shelf
+}
+
+#[tauri::command]
+fn cmd_shelf_open(id: String) -> bool {
+    win::pins::launch(&id)
+}
+
+/// Start a real Windows drag from the island, carrying the parked files.
+///
+/// A webview cannot drag a file out to Explorer - HTML drag-and-drop has no way to
+/// hand over a filesystem path - so this starts an OLE drag from the Win32 side with
+/// the same `CF_HDROP` payload Explorer itself uses. The drop target has no idea the
+/// files came from us.
+///
+/// Deliberately **synchronous**, so it runs on the main thread: `DoDragDrop` has to
+/// be called from the thread that owns the window the drag started in. From a pool
+/// thread it simply never completed. It blocks the UI until the drag ends, which is
+/// exactly what a native drag does - and `QueryContinueDrag` ends it the moment the
+/// button comes up or Escape is pressed.
+#[tauri::command]
+fn cmd_shelf_drag_out(ids: Vec<String>) -> bool {
+    logln!("shelf: starting a drag of {} item(s)", ids.len());
+    win::dragout::start(&ids)
+}
+
+/* --------------------------------------------------------------- launcher */
+
+#[tauri::command]
+fn cmd_launcher_apps() -> Vec<win::applist::App> {
+    launcher::apps()
+}
+
+#[tauri::command]
+fn cmd_launcher_folders() -> Vec<(String, String)> {
+    win::applist::shell_folders()
+}
+
+#[tauri::command]
+fn cmd_launcher_list_dir(path: String) -> Vec<win::applist::FileEntry> {
+    win::applist::list_dir(&path)
+}
+
+#[tauri::command]
+fn cmd_launcher_search(query: String) -> Vec<win::applist::FileEntry> {
+    win::applist::search_files(&query, 30)
+}
+
+/// Open whatever was chosen, exactly as double-clicking it in Explorer would.
+#[tauri::command]
+fn cmd_launcher_open(app: tauri::AppHandle, target: String) -> bool {
+    launcher::close(&app);
+    win::pins::launch(&target)
+}
+
+/// "Open in File Explorer" from the launcher's context menu.
+#[tauri::command]
+fn cmd_launcher_reveal(app: tauri::AppHandle, path: String) -> bool {
+    launcher::close(&app);
+    win::pins::reveal_in_explorer(std::path::Path::new(&path))
+}
+
+#[tauri::command]
+fn cmd_launcher_close(app: tauri::AppHandle) {
+    launcher::close(&app);
+}
+
+/// "sleep", "restart", "shutdown" or "signout".
+#[tauri::command]
+fn cmd_launcher_power(app: tauri::AppHandle, action: String) -> bool {
+    launcher::close(&app);
+    launcher::power(&action)
+}
+
 /// Where the switcher's preview slots ended up, so DWM can draw into them.
 ///
 /// The page reports these after layout, because only it knows where the cards are.
@@ -1200,6 +1359,7 @@ fn apply_settings(app: &tauri::AppHandle, initial: bool) {
     autohide::ALWAYS_VISIBLE.store(s.dock_always_visible, Ordering::SeqCst);
     autohide::TOPBAR_AUTO_HIDE.store(s.topbar_auto_hide, Ordering::SeqCst);
     win::hotkeys::ENABLED.store(s.switcher_enabled, Ordering::SeqCst);
+    win::hotkeys::LAUNCHER_ENABLED.store(s.launcher_enabled, Ordering::SeqCst);
 
     for (label, enabled) in [("dock", s.dock_enabled), ("topbar", s.topbar_enabled)] {
         let Some(w) = app.get_webview_window(label) else {

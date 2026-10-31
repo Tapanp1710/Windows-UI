@@ -11,7 +11,16 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
-import { initIsland, isOpen as islandOpen, paint as paintIsland, setIslandEnabled, setOnStateChange } from "./island";
+import {
+  addToShelf,
+  initIsland,
+  isOpen as islandOpen,
+  paint as paintIsland,
+  setDragging,
+  setIslandEnabled,
+  setOnStateChange,
+} from "./island";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "../shared/theme.css";
 import "./topbar.css";
 
@@ -111,28 +120,28 @@ function renderStatus(s: Status): void {
   if (!s.network.connected) {
     netBtn.innerHTML = ICON.wifiOff;
     netBtn.classList.add("off");
-    netBtn.title = "Not connected";
+    netBtn.ariaLabel = "Not connected";
   } else if (s.network.wifi) {
     netBtn.innerHTML = ICON.wifi;
     netBtn.classList.remove("off");
-    netBtn.title = s.network.ssid ? `Wi-Fi — ${s.network.ssid}` : "Wi-Fi — connected";
+    netBtn.ariaLabel = s.network.ssid ? `Wi-Fi — ${s.network.ssid}` : "Wi-Fi — connected";
   } else {
     netBtn.innerHTML = ICON.ethernet;
     netBtn.classList.remove("off");
-    netBtn.title = "Wired network — connected";
+    netBtn.ariaLabel = "Wired network — connected";
   }
 
   // --- bluetooth
   btBtn.innerHTML = ICON.bt;
   btBtn.hidden = !s.bluetooth.present;
   btBtn.classList.toggle("off", !s.bluetooth.on);
-  btBtn.title = s.bluetooth.on ? "Bluetooth — on" : "Bluetooth — off";
+  btBtn.ariaLabel = s.bluetooth.on ? "Bluetooth — on" : "Bluetooth — off";
 
   // --- volume
   if (!s.volume.available) {
     volBtn.innerHTML = ICON.volMute;
     volBtn.classList.add("off");
-    volBtn.title = "No playback device";
+    volBtn.ariaLabel = "No playback device";
   } else {
     volBtn.classList.remove("off");
     volBtn.innerHTML = s.volume.muted
@@ -140,7 +149,7 @@ function renderStatus(s: Status): void {
       : s.volume.level > 50
         ? ICON.volHigh
         : ICON.volLow;
-    volBtn.title = s.volume.muted
+    volBtn.ariaLabel = s.volume.muted
       ? "Muted — scroll to change"
       : `Volume ${s.volume.level}% — scroll to change`;
   }
@@ -155,7 +164,7 @@ function renderStatus(s: Status): void {
     battPct.textContent = `${pct}%`;
     battBtn.classList.toggle("low", pct <= 20 && !s.battery.charging);
     battBtn.classList.toggle("charging", s.battery.charging);
-    battBtn.title = s.battery.charging
+    battBtn.ariaLabel = s.battery.charging
       ? `Battery ${pct}% — charging`
       : `Battery ${pct}%${s.battery.saver ? " — battery saver on" : ""}`;
   }
@@ -249,7 +258,13 @@ for (const el of [netBtn, btBtn, volBtn, battBtn]) {
   el.addEventListener("click", () => openPanel("quick", statusPill, 330, 252));
 }
 
-clockPill.addEventListener("click", () => openPanel("calendar", clockPill, 272, 348));
+// The clock moved onto the status pill, so it is the clock itself that opens the
+// calendar now; the island behind it opens nothing on a click, because hovering it
+// already shows everything it has.
+clockEl.addEventListener("click", (e) => {
+  e.stopPropagation();
+  openPanel("calendar", clockEl, 272, 348);
+});
 
 chevron.addEventListener("click", () => void invoke("cmd_open_tray_overflow"));
 
@@ -268,7 +283,7 @@ volBtn.addEventListener(
     });
     // Reflect it immediately rather than waiting for the next poll.
     volBtn.innerHTML = currentVolume > 50 ? ICON.volHigh : ICON.volLow;
-    volBtn.title = `Volume ${currentVolume}% — scroll to change`;
+    volBtn.ariaLabel = `Volume ${currentVolume}% — scroll to change`;
   },
   { passive: false },
 );
@@ -324,8 +339,8 @@ const barEl = document.getElementById("bar") as HTMLDivElement;
 const islandEl = document.getElementById("island") as HTMLDivElement;
 
 /** The island's widest, tallest shape. Must cover `.island-body` in topbar.css. */
-const ISLAND_W = 304 + 24;
-const ISLAND_H = 150;
+const ISLAND_W = 330 + 26;
+const ISLAND_H = 268;
 
 function islandFootprint(): DOMRect {
   const pill = clockPill.getBoundingClientRect();
@@ -352,13 +367,41 @@ async function refresh(): Promise<void> {
   }
 }
 
+/**
+ * Files dragged near the bar.
+ *
+ * Tauri reports the native drop target's events for this window; the island opens
+ * while something is over it so there is somewhere to aim, and the paths are parked
+ * on the shelf when it lands.
+ */
+async function wireDrops(): Promise<void> {
+  try {
+    await getCurrentWebview().onDragDropEvent((e) => {
+      if (e.payload.type === "enter" || e.payload.type === "over") {
+        setDragging(true);
+      } else if (e.payload.type === "drop") {
+        setDragging(false);
+        void addToShelf(e.payload.paths ?? []);
+      } else {
+        setDragging(false);
+      }
+    });
+  } catch (err) {
+    await invoke("cmd_log", { msg: `drag-drop listener failed: ${err}` });
+  }
+}
+
 async function main(): Promise<void> {
   initIsland(true);
+  void wireDrops();
   // The region has to be re-sent the moment the island grows or shrinks, or the
   // body would be drawn outside the clickable area and swallow nothing.
   setOnStateChange(() => {
     lastRegions = "";
     void syncRegions();
+    // Hold the bar down while the island is open, or it slides away the moment the
+    // pointer leaves the 56px bar strip on its way to the shelf.
+    void invoke("cmd_topbar_pin", { on: islandOpen() });
   });
   await applyPrefs();
   tickClock();

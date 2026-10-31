@@ -150,8 +150,57 @@ eye. Flagged in REPORT.md.
 | 2.24 | Launch with the pointer already at the bottom edge | PASS | was broken: the reveal event fired before the webview attached its listener and the dock stayed concealed. Fixed by querying state on startup (D-011) |
 
 ## PHASE 3 — Launcher
-N/A — not started. Will verify Win, Esc, and that Win+E/R/D/L/I/A/N/V/Shift+S/arrows/
-numbers all still work untouched.
+
+### What works
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 3.1 | The Win key opens the launcher | PASS | foreground went from the editor to `macui launcher` |
+| 3.2 | The Win key again closes it | PASS | it toggles, the way Start does |
+| 3.3 | Escape closes it | PASS | handled in the hook, so it works even without focus |
+| 3.4 | The dock's Start button opens it | PASS | and opens the real Start menu instead when the launcher is switched off |
+| 3.5 | Every installed app is listed | PASS | **158** on this machine, including Store apps, alphabetical |
+| 3.6 | Real icons | PASS | **failed twice first.** Looking icons up by the AppsFolder's parsing name left almost everything with a blank page icon; the icon now comes from the shell item the enumeration already has (D-030) |
+| 3.7 | Search filters apps as you type | PASS | names that *start* with the query sort first |
+| 3.8 | Search finds files in user folders | PASS | bounded walk: depth 3, 30 results, 350ms budget, so a deep Downloads folder cannot make it feel slow |
+| 3.9 | Sidebar folders list their contents | PASS | Desktop, Documents, Downloads, Music, Videos |
+| 3.10 | Clicking a folder in the results browses into it | PASS | |
+| 3.11 | Enter opens the selection | PASS | |
+| 3.12 | Arrow keys move through the grid | PASS | left/right by one, up/down by a row |
+| 3.13 | Right-click offers Open in File Explorer | PASS | for anything with a real path |
+| 3.14 | Opens as glass | PASS | real acrylic, DWM-rounded, system drop shadow |
+| 3.15 | Power row present | PASS | sleep, restart, shut down, sign out |
+
+### Win+<key> — the matrix this phase exists to pass
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 3.16 | Win+E, Win+R, Win+I, Win+A, Win+N, Win+V, Win+Shift+S, Win+D, Win+arrows, Win+1, Win+Tab, Win+Ctrl+D | **NOT VERIFIED** | `scripts/winkey-matrix.ps1` sends every one of them and reports what Windows did. It was started and stopped part-way, because it takes the keyboard over for about a minute and the machine was in use. **Run it when the machine is free.** |
+| 3.17 | Win+L (lock) | **NOT TESTED, deliberately** | sending it locks the screen. The mechanism is identical to Win+E: pressing `L` marks the press "used", so the release is passed straight through and the keydown was never touched |
+| 3.18 | The mechanism itself | argued, not measured | the hook never touches the Win key**down**, only its release, and only when nothing else was pressed (D-029) |
+| 3.19 | Switched off in settings | PASS | the hook stops touching the Win key entirely and Windows Start opens as always |
+| 3.20 | Launcher window missing | PASS (by construction) | falls back to opening the real Start menu rather than doing nothing |
+
+### Power actions
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 3.21 | Sleep / restart / shut down / sign out | **NOT TESTED** | each one would end the session running the test. They go through `shutdown.exe` and `rundll32 powrprof`, which is what every launcher does, and they are the four Start offers |
+
+## Feedback round — island, shelf, glass, top bar
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| F.1 | White marks on the top bar when hovered | FIXED | they were Windows' **native tooltips** from `title` attributes, drawn in the system style over the glass. Every `title` is now an `aria-label` (D-032) |
+| F.2 | Island no longer shows the clock | PASS | the clock moved to the status pill on the right |
+| F.3 | Island shows what is playing | PASS | album art, title, artist, transport, plus a small equaliser on the collapsed pill |
+| F.4 | Island carries a shelf | PASS | items render as chips with their real icons and a count badge on the pill |
+| F.5 | Drag an item **out** to Explorer | PASS | `shelf: starting a drag of 1 item(s)` → `drag out: 1 file(s), accepted=true`. A real OLE drag with `CF_HDROP` (D-031) |
+| F.6 | Click a chip to open it | PASS | |
+| F.7 | Remove a chip | PASS | the × on hover |
+| F.8 | Shelf survives a restart | PASS | kept in `settings.json` |
+| F.9 | Drop a file **onto** the island | **NOT TESTED** | implemented through Tauri's drop events, and the island opens while something is dragged over it. Synthesising a drag *from Explorer* is not something this harness can do; it needs a human hand |
+| F.10 | The bar no longer slides out from under the pointer | FIXED | **this was the real bug behind "the buttons are not functioning properly"**: the bar stayed visible only while the pointer was inside its 56px strip, so reaching down to the island's contents left that strip and the whole bar slid away mid-reach. The bar is now held down while the island is open |
+| F.11 | The bar appears immediately on reaching the top edge | IMPROVED | cursor sampling 60ms → 20ms and the reveal animation 250ms → 150ms, with the slower 250ms kept for hiding. Needs your eye on whether it now feels immediate |
+| F.12 | Maximised windows use the whole screen | PASS | the bar reserves nothing |
+| F.13 | Launcher, settings and panels are real glass | PASS | compositor blur, DWM-rounded corners, system border and shadow |
 
 ## PHASE 4 — Window switcher
 

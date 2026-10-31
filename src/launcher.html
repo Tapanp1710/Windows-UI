@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>macui launcher</title>
+    <script>
+      window.__diag = [];
+      function __report(kind, msg) {
+        window.__diag.push(kind + ": " + msg);
+        try {
+          window.__TAURI_INTERNALS__.invoke("cmd_log", { msg: "[launcher] " + kind + ": " + msg });
+        } catch (e) {}
+      }
+      addEventListener(
+        "error",
+        function (e) {
+          if (e.target && e.target !== window && e.target.tagName) {
+            __report("LOAD-FAIL", e.target.tagName + " " + (e.target.src || e.target.href));
+          } else {
+            __report("ERR", e.message + " @" + e.lineno);
+          }
+        },
+        true,
+      );
+      addEventListener("unhandledrejection", function (e) {
+        __report("REJECT", String(e.reason));
+      });
+    </script>
+    <link rel="stylesheet" href="./shared/theme.css" />
+    <link rel="stylesheet" href="./launcher/launcher.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="head">
+        <input
+          id="search"
+          type="search"
+          class="search"
+          placeholder="Search apps and files"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label="Search apps and files"
+        />
+      </header>
+
+      <div class="body">
+        <nav class="side" id="side" aria-label="Places"></nav>
+        <section class="main">
+          <h2 class="section-title" id="section-title">All apps</h2>
+          <div class="grid" id="grid" role="listbox" aria-label="Results"></div>
+          <p class="empty" id="empty" hidden>Nothing matches.</p>
+        </section>
+      </div>
+
+      <footer class="foot">
+        <div class="power" id="power">
+          <button data-power="sleep" type="button">Sleep</button>
+          <button data-power="restart" type="button">Restart</button>
+          <button data-power="shutdown" type="button">Shut down</button>
+          <button data-power="signout" type="button">Sign out</button>
+        </div>
+        <span class="hint">Enter opens · Esc closes</span>
+      </footer>
+    </div>
+    <script type="module" src="./launcher/launcher.ts"></script>
+  </body>
+</html>

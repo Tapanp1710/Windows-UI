@@ -37,7 +37,34 @@ const ICON_PX: i32 = 256;
 /// never take the dock down.
 pub fn icon_data_url(parsing_name: &str) -> Option<String> {
     let rgba = icon_rgba(parsing_name)?;
-    let png = encode_png(&rgba)?;
+    encode_data_url(&rgba)
+}
+
+/// The same, for a shell item the caller already has.
+///
+/// The launcher enumerates `shell:AppsFolder` and gets an `IShellItem` per app, so
+/// it can ask that item for its icon directly. Going back through a parsing name
+/// does not work for all of them: the names the AppsFolder hands out do not all
+/// round-trip through `SHCreateItemFromParsingName`, and every legacy app came back
+/// with a blank page icon.
+///
+/// `px` is the requested edge length. The launcher asks for less than the dock does
+/// because it sends a couple of hundred of these across the IPC boundary at once.
+pub fn icon_data_url_from_item(item: &windows::Win32::UI::Shell::IShellItem, px: i32) -> Option<String> {
+    unsafe {
+        let factory: IShellItemImageFactory = item.cast().ok()?;
+        let size = SIZE { cx: px, cy: px };
+        let hbitmap: HBITMAP = factory
+            .GetImage(size, SIIGBF_RESIZETOFIT | SIIGBF_BIGGERSIZEOK)
+            .ok()?;
+        let rgba = hbitmap_to_rgba(hbitmap);
+        let _ = DeleteObject(hbitmap);
+        encode_data_url(&rgba?)
+    }
+}
+
+fn encode_data_url(rgba: &Rgba) -> Option<String> {
+    let png = encode_png(rgba)?;
     let b64 = base64::engine::general_purpose::STANDARD.encode(png);
     Some(format!("data:image/png;base64,{b64}"))
 }

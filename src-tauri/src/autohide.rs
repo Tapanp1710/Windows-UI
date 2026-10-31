@@ -32,9 +32,15 @@ const TRIGGER_PX: i32 = 2;
 /// Delay before hiding once the pointer leaves, per the brief.
 const CONCEAL_DELAY: Duration = Duration::from_millis(400);
 
-/// Sampling intervals. Slower while hidden, since nothing is on screen to feel laggy.
-const POLL_IDLE: Duration = Duration::from_millis(60);
-const POLL_ACTIVE: Duration = Duration::from_millis(40);
+/// Sampling intervals.
+///
+/// 20ms even while hidden: the bars have to be there the moment the pointer reaches
+/// the edge, and a 60ms poll put up to a tenth of a second in front of a 150ms
+/// animation, which reads as hesitation. `GetCursorPos` costs a couple of
+/// microseconds, so fifty of them a second is nothing - measured idle CPU is
+/// unchanged.
+const POLL_IDLE: Duration = Duration::from_millis(20);
+const POLL_ACTIVE: Duration = Duration::from_millis(20);
 
 /// Set from settings; when true the dock never auto-hides.
 pub static ALWAYS_VISIBLE: AtomicBool = AtomicBool::new(false);

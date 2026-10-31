@@ -45,20 +45,21 @@
       </button>
 
       <!-- Centre: the island.
-           Collapsed it is the clock. Hovering expands it to whatever is playing;
-           it also expands by itself for a few seconds when the volume changes, the
-           charger goes in or out, or the track changes, then collapses again.
-           Clicking opens the calendar panel. -->
+           No clock - that lives on the right now. Collapsed it shows whatever is
+           going on: the album art of what is playing, or how many things are parked
+           on the shelf. Hovering it, or dragging a file anywhere near it, expands it
+           to the controls and the shelf itself. -->
       <div id="island" class="island centre" data-state="idle">
         <button id="clock-pill" class="pill glass island-pill" type="button"
-                aria-label="Calendar">
+                aria-label="Now playing and shelf">
           <span class="island-lead" id="island-lead" aria-hidden="true"></span>
-          <span id="clock" class="label"></span>
-          <span class="island-trail" id="island-trail" aria-hidden="true"></span>
+          <span class="island-eq" id="island-eq" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="island-label" id="island-label">Shelf</span>
+          <span class="island-badge" id="island-badge" hidden>0</span>
         </button>
 
         <div class="island-body glass" id="island-body" aria-hidden="true">
-          <div class="np">
+          <div class="np" id="np">
             <div class="np-art" id="np-art"></div>
             <div class="np-meta">
               <div class="np-title" id="np-title">Nothing playing</div>
@@ -70,6 +71,15 @@
               </div>
             </div>
           </div>
+
+          <div class="shelf" id="shelf">
+            <div class="shelf-strip" id="shelf-strip"></div>
+            <p class="shelf-hint" id="shelf-hint">
+              Drop files, folders or images here to park them. Drag one off to move it
+              on.
+            </p>
+          </div>
+
           <div class="np-activity" id="np-activity" hidden>
             <span class="act-icon" id="act-icon"></span>
             <span class="act-text" id="act-text"></span>
@@ -80,17 +90,19 @@
 
       <!-- Right: status. Each control opens the real Windows Quick Settings. -->
       <div id="status-pill" class="pill glass right">
+        <span id="clock" class="label clock"></span>
+        <span class="pill-sep" aria-hidden="true"></span>
         <button id="tray-chevron" class="icon-btn" type="button"
-                title="Show hidden tray icons">
+                aria-label="Show hidden tray icons">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5"
             fill="none" stroke="currentColor" stroke-width="1.6"
             stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <button id="net-btn" class="icon-btn" type="button" title="Network"></button>
-        <button id="bt-btn" class="icon-btn" type="button" title="Bluetooth"></button>
+        <button id="net-btn" class="icon-btn" type="button" aria-label="Network"></button>
+        <button id="bt-btn" class="icon-btn" type="button" aria-label="Bluetooth"></button>
         <button id="vol-btn" class="icon-btn" type="button"
-                title="Volume — scroll to change"></button>
-        <button id="batt-btn" class="icon-btn batt" type="button" title="Battery">
+                aria-label="Volume — scroll to change"></button>
+        <button id="batt-btn" class="icon-btn batt" type="button" aria-label="Battery">
           <span id="batt-glyph" class="batt-glyph"><i id="batt-fill"></i></span>
           <span id="batt-pct" class="batt-pct"></span>
         </button>
