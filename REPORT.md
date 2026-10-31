@@ -1,26 +1,44 @@
-# REPORT — macOS-inspired UI layer for Windows
+# macui — report
 
-Written for: you, the laptop's owner, on waking up.
+**Short version: all six phases are built**, and this round fixed the crashes, put
+every Windows taskbar control at the top, recoloured the whole thing white-to-dark-blue
+and rebuilt the Start menu's look. Your Windows taskbar always comes back.
 
-**Short version: all six phases are built**, tested where testing was possible, and
-committed. Dock, top bar with a Dynamic Island, launcher on the Win key, Alt+Tab with
-live previews, desktop widgets, and the settings window with a per-user installer.
-Your Windows taskbar always comes back.
+## The crashes
 
-**One thing needs you to run it.** The Win+<key> matrix — Win+E, Win+R, Win+L and the
-rest — is the one claim I could not finish verifying, because the test takes the
-keyboard over for about a minute and you were using the machine:
+They were **hangs, not crashes**, and the Windows event log says so: `AppHangB1`,
+"macui.exe stopped interacting with Windows and was closed", three times in under an
+hour. Windows gives up on a process that stops pumping messages for five seconds.
+
+**Your machine's memory is genuinely tight** - 7.90 GB total, 0.38 GB free, commit at
+15.3 of 18.5 GB - and that is why this bit when it did. But low RAM was not the fault;
+it turned a slow call into a fatal one. Disk is fine: 25.9 GB free.
+
+Two things were waiting on the main thread, and both were in the Wi-Fi/Bluetooth code:
+
+1. Reading Bluetooth state **started PowerShell**, and the top bar asked for status
+   every two seconds. A cold PowerShell start on a machine paging this hard is seconds.
+2. The Wi-Fi and Bluetooth switches were synchronous commands that waited for the
+   radio. Switching a Bluetooth radio routinely takes seconds, and the quick panel
+   polled while it was open.
+
+Both now run on a background thread that keeps a snapshot; the UI reads plain data and
+never waits. The PowerShell call is gone entirely. See D-033.
+
+**One thing still needs you to run it.** The Win+<key> matrix - Win+E, Win+R, Win+L and
+the rest - is the one claim I could not finish verifying, because the test takes the
+keyboard over for about a minute:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\winkey-matrix.ps1
 ```
 
-It reports what Windows actually did for each combination. If any of them opens the
-launcher instead of doing its job, switch "Use this app's launcher" off in settings
-and tell me — the brief's own fallback.
+If any of them opens the launcher instead of doing its job, switch "Use this app's
+launcher" off in settings and tell me.
 
-**Memory is inside target**: 242–246 MB private across the whole process tree,
-against 250 MB, with every phase loaded.
+**Memory is inside target**: 236.6 MB private across the whole process tree, against
+250 MB, with every phase loaded - slightly better than before, despite two new
+background threads.
 
 ---
 
@@ -327,7 +345,7 @@ Measured over 30 s: dock, top bar, island and all five widgets running, panels c
 | Metric | Value | Target | Verdict |
 |---|---|---|---|
 | Idle CPU | **~0.2%** across 8 processes (8 cores) | near-0% | **met** |
-| Private bytes | **242–246 MB** over repeated fresh starts | under 250 MB | **met**, with little room left |
+| Private bytes | **236.6 MB** settled | under 250 MB | **met** |
 | Processes | 8 (2 ours + 6 WebView2) | — | was 10 before the panels shared a renderer |
 | Without the widgets | ~200 MB | — | the master switch destroys the layer |
 | Before sharing a renderer | 258.3 MB | — | over target; see D-020 |
@@ -397,3 +415,66 @@ Beyond that:
 | `%LOCALAPPDATA%\macui\macui.log` | Runtime log |
 
 Git history has one commit per working step, so any step can be rolled back on its own.
+
+
+## This round
+
+### The top bar now carries every taskbar control
+Eleven tiles and two sliders, all visible at once rather than paged behind a chevron.
+
+**Driving the real thing:** Wi-Fi, Bluetooth, Airplane mode (every radio off),
+brightness and volume. The brightness slider moves the actual backlight through the
+same WMI method Windows' own slider uses, so Windows' slider follows it.
+
+**Opening the real thing:** Battery saver, Night light, Accessibility, Nearby sharing,
+Cast, VPN, Mobile hotspot - one click to the Windows page - and Project, which runs
+`DisplaySwitch.exe`, exactly what Win+P does.
+
+That split is deliberate and worth being plain about: **those seven have no supported
+way to toggle from another process.** The only way to "switch" Night light from here
+is to write undocumented registry state behind Windows' back, which is the kind of
+thing the brief rules out, and which breaks the moment Windows changes it. A tile that
+takes you to the real switch is honest; one that silently does nothing is not. If you
+would rather I drove any of them anyway, say which and I will, with the risk written
+down. See D-036.
+
+Each toggle tile also has a chevron, like Windows' own Wi-Fi tile: the switch on the
+left, the full list on the right.
+
+### White to dark blue
+Light mode is a cool near-white, dark mode a deep navy - the same hue family at two
+ends - with one saturated blue used only for state: a switch that is on, the selected
+tile, today's date. Nothing decorative is coloured.
+
+Four stylesheets had been restating the accent at an opacity of their own, which is how
+a palette change misses three of them. They now use shared tokens, so the next change
+is one file.
+
+### The white marking is gone, and this time it was the other half
+I fixed native tooltips earlier (D-032). This was the rest of it: the top bar's
+clickable region was measured from the island's **container**, and the collapsed
+`.island-body` inside it keeps its full 330px width while its height is zero. So a
+100px pill produced a 366px region and the window's acrylic showed through the empty
+part as a pale slab across the middle of the bar. It now measures the pill. See D-034.
+
+### The Start menu's look
+A pill-shaped search field with its own icon, icons on the sidebar entries, slightly
+larger app plates, and a real footer: your account on the left, and the four power
+actions behind a power glyph on the right instead of sitting in the open - "Shut down"
+was one stray click from "Sleep".
+
+## What I got wrong this round
+
+I rewrote `settings.json` from PowerShell to flip one flag, and PowerShell 5.1 writes a
+**UTF-8 BOM**, which serde will not parse. The app fell back to defaults and **wiped
+your shelf and widget positions**. I put both back from the values earlier in the
+session - REPORT.md and the screenshots folder are on the shelf, the five widgets are
+where they were. If anything else looks reset, tell me.
+
+## Still open
+
+1. **Run `scripts\winkey-matrix.ps1`.** The one outstanding verification.
+2. **Park a window on the island.** Files, folders and images work; windows do not yet.
+3. **Drop a file onto the island from Explorer.** Implemented, untested - synthesising
+   a drag out of Explorer is not something I can do. Dragging *out* is tested and works.
+4. **Multi-monitor.** The code assumes one display in several places.

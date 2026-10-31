@@ -399,3 +399,61 @@ All run against the release build on 2026-10-31, by driving a real mouse pointer
 | 6.40 | No keyboard hook added | PASS | this phase installs none; grep for `SetWindowsHookEx` returns nothing in the whole project |
 | 6.41 | Settings window behaves like a normal window | PASS | appears in Alt+Tab, focusable, closable — it is not always-on-top and steals nothing |
 | 6.42 | Unit tests | PASS | 2 passed (`startup::lnk_path_is_under_the_users_startup_folder`, `watchdog::parses_watchdog_invocation`) |
+
+## Crash fix — the hangs (2026-10-31)
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| H.1 | Identify the fault | **AppHangB1**, not AppCrash | Application event log, three in under an hour (2:36, 2:42, 3:20 PM): "macui.exe stopped interacting with Windows and was closed". A hang is the main thread not pumping messages for five seconds, which is a different bug from running out of memory |
+| H.2 | Is it low RAM? | **contributing, not the cause** | 7.90 GB total, **0.38 GB free**, commit 15.3/18.5 GB. Real pressure, and it is what turned a slow call into a five-second one - but the recorded fault is a hang |
+| H.3 | Is it low disk? | **no** | 25.9 GB free of 237.7 GB |
+| H.4 | Root cause 1 | FOUND | `win::bluetooth()` started **PowerShell** on the main thread, and the top bar calls `cmd_status` every 2s (D-033) |
+| H.5 | Root cause 2 | FOUND | `cmd_radios`/`cmd_set_radio` were *synchronous* commands joining an MTA thread doing WinRT radio calls - seconds, on the main thread (D-033) |
+| H.6 | PowerShell probe removed | PASS | Bluetooth presence and state now come from the radio snapshot; no process is started |
+| H.7 | Radio calls off the main thread | PASS | background poller; `list()` is a memory read, `set()` queues. Log: `radio poller started` |
+| H.8 | Launcher I/O off the main thread | PASS | `cmd_launcher_apps`, `cmd_launcher_search`, `cmd_launcher_list_dir` are async |
+| H.9 | App survives a session | PASS | repeated starts, panel and launcher opened, no new AppHang entries |
+| H.10 | Memory after the fix | PASS | **236.6 MB** private over 8 processes, settled. Target under 250 MB; the previous figure was 242-246 MB |
+
+## Quick settings — every taskbar control at the top
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| Q.1 | Wi-Fi toggle drives the real radio | PASS | log: `radio wifi -> false (queued)` then `(applied, ok=true)` |
+| Q.2 | Bluetooth toggle drives the real radio | PASS | same path |
+| Q.3 | Airplane mode | PASS | turns every toggleable radio off, and reads as on when all are off |
+| Q.4 | Battery saver, Night light, Accessibility, Nearby sharing, Cast, VPN, Mobile hotspot | PASS | open the real Windows page. **Deliberate**: none has a supported API to toggle from another process (D-036) |
+| Q.5 | Project | PASS | `DisplaySwitch.exe`, what Win+P opens |
+| Q.6 | Chevron on a toggle tile | PASS | opens that tile's settings page without flipping the switch |
+| Q.7 | Brightness slider present | PASS | WMI reports a dimmable panel; log: `brightness: 44% (software control available)` |
+| Q.8 | **Brightness actually moves the backlight** | PASS | `cargo test brightness_round_trip` - sets a different level, reads it back off the hardware, restores. **Failed first**: `WBEM_E_TYPE_MISMATCH`, because `WmiSetBrightness` wants VT_I4 for both parameters despite declaring uint32/uint8 (D-035). `ExecMethod` had returned Ok with the wrong types |
+| Q.9 | Brightness hidden where unsupported | PASS (by construction) | `cmd_brightness` answers null and the row stays hidden |
+| Q.10 | Volume slider | PASS | unchanged, drives the real endpoint |
+| Q.11 | All eleven tiles visible at once | PASS | no paging, no scroll |
+
+## Palette — white to dark blue
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| P.1 | Every surface recoloured | PASS | dock, top bar, island, panels, launcher, settings, widgets, switcher |
+| P.2 | No colour outside theme.css | PASS | the four stylesheets that restated the accent at an opacity now use `--accent-soft` / `--accent-wash` |
+| P.3 | Light and dark both defined | PASS | near-white with a blue cast / deep navy, same hue family |
+
+## The white marking at the top
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| W.1 | Reproduce | PASS | a pale slab ~550px wide behind the collapsed island, visible in a screen capture of the revealed bar |
+| W.2 | Root cause | FOUND | the hit region was measured from `#island`, whose `.island-body` child keeps its 330px width while collapsed to zero height - so the region was three times the pill and the window's acrylic showed through (D-034) |
+| W.3 | Fixed | PASS | measure the pill while collapsed; re-captured, slab gone, pills float clean |
+
+## Launcher restyle
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| L.1 | Opens on the Win key | PASS | after the restyle, unchanged |
+| L.2 | Pill search with its own icon | PASS | |
+| L.3 | Sidebar entries carry icons | PASS | Apps, and the five user folders |
+| L.4 | Account row in the footer | PASS | initial avatar and the signed-in name |
+| L.5 | Power menu | PASS | the four actions behind the power glyph instead of four loose text buttons - "Shut down" is no longer one stray click from "Sleep" |
+| L.6 | All 158 apps still listed with real icons | PASS | |

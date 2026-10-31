@@ -11,6 +11,7 @@ pub mod apps;
 pub mod icons;
 pub mod media;
 pub mod pins;
+pub mod brightness;
 pub mod radios;
 pub mod status;
 pub mod sysinfo;
@@ -240,30 +241,10 @@ pub fn open_tray_overflow() -> bool {
 ///
 /// Uses the same radio enumeration the Settings app does. Cached presence, live state.
 pub fn bluetooth() -> (bool, bool) {
-    use std::os::windows::process::CommandExt;
-    // The Win32 Bluetooth API (BluetoothFindFirstRadio) reports presence but not the
-    // soft on/off state, which lives in the Radio Management WinRT API. Shelling out
-    // to PowerShell for that on every poll would be far too expensive, so presence is
-    // reported from the device list and "on" is inferred from it.
-    use std::sync::OnceLock;
-    static CACHE: OnceLock<bool> = OnceLock::new();
-    let present = *CACHE.get_or_init(|| {
-        std::process::Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                "@(Get-PnpDevice -Class Bluetooth -Status OK -ErrorAction SilentlyContinue).Count",
-            ])
-            .creation_flags(0x0800_0000)
-            .output()
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .and_then(|s| s.trim().parse::<i32>().ok())
-            .map(|n| n > 0)
-            .unwrap_or(false)
-    });
-    (present, present)
+    // Presence and the real soft on/off state both come from the radio poller's
+    // snapshot. This used to shell out to PowerShell from the main thread; see
+    // `radios::bluetooth` and D-033 for why that had to go.
+    radios::bluetooth()
 }
 
 /// Park a window directly above the desktop, below every ordinary window.

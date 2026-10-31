@@ -148,6 +148,16 @@ async function showSearch(query: string): Promise<void> {
   render(`Results for "${query}"`);
 }
 
+/* ---------------------------------------------------------------- icons */
+
+const GLYPH = (d: string) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+
+const SEARCH_ICON = GLYPH(`<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>`);
+const APPS_ICON = GLYPH(`<rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/>`);
+const FOLDER_ICON = GLYPH(`<path d="M3 7.5a2 2 0 0 1 2-2h4l2 2.2h8a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>`);
+const POWER_ICON = GLYPH(`<path d="M12 3.5v8"/><path d="M6.8 6.6a7.5 7.5 0 1 0 10.4 0"/>`);
+
 /* -------------------------------------------------------------- sidebar */
 
 function markSide(path: string | null): void {
@@ -169,7 +179,7 @@ async function buildSidebar(): Promise<void> {
   const entry = (label: string, path: string | null) => {
     const b = document.createElement("button");
     b.type = "button";
-    b.textContent = label;
+    b.innerHTML = `<span class="side-icon">${path ? FOLDER_ICON : APPS_ICON}</span><span>${label}</span>`;
     if (path) b.dataset.path = path;
     b.addEventListener("click", () => (path ? void showFolder(path, label) : showApps()));
     side.appendChild(b);
@@ -181,6 +191,57 @@ async function buildSidebar(): Promise<void> {
   header("Folders");
   for (const [name, path] of await invoke<[string, string][]>("cmd_launcher_folders")) {
     entry(name, path);
+  }
+}
+
+/* --------------------------------------------------------------- footer */
+
+/**
+ * The account row and the power menu.
+ *
+ * The four power actions used to sit in the footer as loose text buttons, which put
+ * "Shut down" one stray click from "Sleep". They are now behind the power glyph, the
+ * way Windows' own Start menu has them - the same four actions, one deliberate step
+ * further away.
+ */
+function wireFooter(): void {
+  $("search-icon").innerHTML = SEARCH_ICON;
+  $("power-btn").innerHTML = POWER_ICON;
+
+  void invoke<string>("cmd_user_name")
+    .then((name) => {
+      if (!name) return;
+      $("who-name").textContent = name;
+      $("avatar").textContent = name.trim().charAt(0).toUpperCase();
+    })
+    .catch(() => {
+      /* the row just stays empty */
+    });
+
+  const btn = $<HTMLButtonElement>("power-btn");
+  const menu = $<HTMLElement>("power-menu");
+  const setOpen = (open: boolean) => {
+    menu.hidden = !open;
+    btn.setAttribute("aria-expanded", String(open));
+  };
+
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setOpen(menu.hidden);
+  });
+  // Anywhere else in the launcher closes it, the way a menu should.
+  document.addEventListener("click", () => setOpen(false));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !menu.hidden) {
+      e.stopPropagation();
+      setOpen(false);
+    }
+  });
+
+  for (const b of menu.querySelectorAll<HTMLButtonElement>("[data-power]")) {
+    b.addEventListener("click", () =>
+      void invoke("cmd_launcher_power", { action: b.dataset.power }),
+    );
   }
 }
 
@@ -262,11 +323,7 @@ async function main(): Promise<void> {
     if (row?.path) void invoke("cmd_launcher_reveal", { path: row.path });
   });
 
-  for (const b of document.querySelectorAll<HTMLButtonElement>("[data-power]")) {
-    b.addEventListener("click", () =>
-      void invoke("cmd_launcher_power", { action: b.dataset.power }),
-    );
-  }
+  wireFooter();
 
   // Arrow keys move through the grid; Enter opens the selection. Escape is also
   // handled by the keyboard hook, so it works even if this window has lost focus.

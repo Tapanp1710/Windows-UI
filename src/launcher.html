@@ -33,15 +33,18 @@
   <body>
     <div class="shell">
       <header class="head">
-        <input
-          id="search"
-          type="search"
-          class="search"
-          placeholder="Search apps and files"
-          autocomplete="off"
-          spellcheck="false"
-          aria-label="Search apps and files"
-        />
+        <div class="search-wrap">
+          <span class="search-icon" id="search-icon" aria-hidden="true"></span>
+          <input
+            id="search"
+            type="search"
+            class="search"
+            placeholder="Search apps, files and folders"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Search apps, files and folders"
+          />
+        </div>
       </header>
 
       <div class="body">
@@ -54,13 +57,22 @@
       </div>
 
       <footer class="foot">
-        <div class="power" id="power">
-          <button data-power="sleep" type="button">Sleep</button>
-          <button data-power="restart" type="button">Restart</button>
-          <button data-power="shutdown" type="button">Shut down</button>
-          <button data-power="signout" type="button">Sign out</button>
+        <!-- The account on the left, power on the right: the shape a Start menu has
+             had for thirty years, and where the hand already expects them. -->
+        <div class="who">
+          <span class="avatar" id="avatar"></span>
+          <span class="who-name" id="who-name"></span>
         </div>
-        <span class="hint">Enter opens · Esc closes</span>
+        <div class="power-wrap">
+          <span class="hint">Enter opens · Esc closes</span>
+          <button class="power-btn" id="power-btn" type="button" aria-label="Power" aria-expanded="false"></button>
+          <div class="power-menu" id="power-menu" hidden role="menu">
+            <button data-power="sleep" type="button" role="menuitem">Sleep</button>
+            <button data-power="signout" type="button" role="menuitem">Sign out</button>
+            <button data-power="restart" type="button" role="menuitem">Restart</button>
+            <button data-power="shutdown" type="button" role="menuitem">Shut down</button>
+          </div>
+        </div>
       </footer>
     </div>
     <script type="module" src="./launcher/launcher.ts"></script>

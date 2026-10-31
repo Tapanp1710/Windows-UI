@@ -97,7 +97,7 @@ html[data-acrylic="on"] body {
   appearance: none;
   border: 1px solid var(--glass-edge);
   border-radius: 50%;
-  background: rgba(232, 130, 62, 0.55);
+  background: var(--accent);
   cursor: default;
   transition:
     background var(--t-fast) var(--ease-out),
@@ -391,7 +391,7 @@ input[type="range"]:focus-visible {
 }
 
 .wide:hover:not(:disabled) {
-  background: rgba(232, 130, 62, 0.18);
+  background: var(--accent-wash);
 }
 
 .wide:disabled {
@@ -399,7 +399,7 @@ input[type="range"]:focus-visible {
 }
 
 .wide.danger:hover:not(:disabled) {
-  background: rgba(214, 90, 60, 0.22);
+  background: var(--accent-soft);
 }
 
 .wide:focus-visible {

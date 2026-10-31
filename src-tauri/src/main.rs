@@ -198,6 +198,10 @@ fn main() {
             cmd_glass,
             cmd_radios,
             cmd_set_radio,
+            cmd_set_airplane,
+            cmd_brightness,
+            cmd_set_brightness,
+            cmd_open_project,
             cmd_open_ms_settings,
             cmd_open_panel,
             cmd_close_panel,
@@ -205,6 +209,7 @@ fn main() {
             cmd_media_art,
             cmd_switcher_slots,
             cmd_switcher_pick,
+            cmd_user_name,
             cmd_launcher_apps,
             cmd_launcher_folders,
             cmd_launcher_list_dir,
@@ -256,6 +261,10 @@ fn main() {
             }
             // Only costs anything when something is actually playing.
             win::media::start();
+            // Radios are polled on their own thread so no WinRT round trip ever
+            // lands on the main thread. See D-033.
+            win::radios::start();
+            win::brightness::start();
             switcher::start(app.handle().clone());
             launcher::warm_up();
             AUTOHIDE_RUNNING
@@ -405,9 +414,31 @@ fn cmd_radios() -> Vec<win::radios::RadioInfo> {
     win::radios::list()
 }
 
+/// Queue a radio change. Returns immediately - the poller thread applies it and the
+/// next snapshot carries the result. It used to wait for the radio, on the main
+/// thread, which is what hung the app (D-033).
 #[tauri::command]
-fn cmd_set_radio(kind: String, on: bool) -> bool {
-    win::radios::set(&kind, on)
+fn cmd_set_radio(kind: String, on: bool) {
+    win::radios::set(&kind, on);
+}
+
+/// Panel backlight, 0-100, or null where the machine has no dimmable panel.
+#[tauri::command]
+fn cmd_brightness() -> Option<u8> {
+    win::brightness::level()
+}
+
+/// Queue a backlight change. Returns immediately; the WMI thread applies it.
+#[tauri::command]
+fn cmd_set_brightness(level: u8) {
+    win::brightness::set(level);
+}
+
+/// Airplane mode: every radio off, or back on.
+#[tauri::command]
+fn cmd_set_airplane(on: bool) {
+    // "Airplane on" means radios off.
+    win::radios::set_all(!on);
 }
 
 /// Open a Windows Settings page, e.g. "ms-settings:network-wifi".
@@ -422,6 +453,15 @@ fn cmd_open_ms_settings(page: String) -> bool {
         return false;
     }
     win::pins::launch(&page)
+}
+
+/// The Windows projection flyout - what Win+P opens.
+///
+/// A fixed executable name, taking no argument from the page, so the `ms-settings:`
+/// allowlist above stays exactly as narrow as it is.
+#[tauri::command]
+fn cmd_open_project() -> bool {
+    win::pins::launch("DisplaySwitch.exe")
 }
 
 /// Open one of the top bar's panels, anchored under the pill that was clicked.
@@ -1178,8 +1218,14 @@ fn cmd_shelf_drag_out(ids: Vec<String>) -> bool {
 
 /* --------------------------------------------------------------- launcher */
 
+/// The signed-in account's display name, for the launcher's footer.
 #[tauri::command]
-fn cmd_launcher_apps() -> Vec<win::applist::App> {
+fn cmd_user_name() -> String {
+    std::env::var("USERNAME").unwrap_or_default()
+}
+
+#[tauri::command]
+async fn cmd_launcher_apps() -> Vec<win::applist::App> {
     launcher::apps()
 }
 
@@ -1189,12 +1235,12 @@ fn cmd_launcher_folders() -> Vec<(String, String)> {
 }
 
 #[tauri::command]
-fn cmd_launcher_list_dir(path: String) -> Vec<win::applist::FileEntry> {
+async fn cmd_launcher_list_dir(path: String) -> Vec<win::applist::FileEntry> {
     win::applist::list_dir(&path)
 }
 
 #[tauri::command]
-fn cmd_launcher_search(query: String) -> Vec<win::applist::FileEntry> {
+async fn cmd_launcher_search(query: String) -> Vec<win::applist::FileEntry> {
     win::applist::search_files(&query, 30)
 }
 
