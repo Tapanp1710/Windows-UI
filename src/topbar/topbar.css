@@ -1,0 +1,162 @@
+/*
+ * Top bar — three separate floating glass pills, 6px from the top edge.
+ *
+ * One window spans the full screen width, but its Win32 hit-test region is set to
+ * just the three pill rectangles (see cmd_set_topbar_regions). Everything between the
+ * pills therefore passes clicks straight through to whatever is underneath, so an
+ * always-on-top bar does not steal the top strip of the screen.
+ */
+
+.bar {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 6px var(--edge-margin) 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: var(--radius-bar);
+  font: inherit;
+  font-size: var(--fs-bar);
+  color: var(--text);
+  cursor: default;
+  /* .glass supplies background, border, blur and shadow */
+}
+
+.pill.centre {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+button.pill,
+.icon-btn {
+  appearance: none;
+  font: inherit;
+}
+
+.label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+#app-pill .label {
+  font-weight: 600;
+}
+
+.app-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+/* --- status icons --------------------------------------------------------- */
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  border-radius: 7px;
+  cursor: default;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.icon-btn:hover {
+  background: rgba(232, 130, 62, 0.20);
+}
+
+.icon-btn svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+.icon-btn.off {
+  color: var(--text-dim);
+}
+
+/* Battery is a drawn shell with a fill, so the level reads at a glance. */
+.icon-btn.batt {
+  width: auto;
+  padding: 0 4px;
+}
+
+.batt-glyph {
+  position: relative;
+  display: inline-block;
+  /* room for the positive terminal that sticks out on the right, so it never
+     collides with the percentage text next to it */
+  margin-right: 6px;
+  width: 22px;
+  height: 11px;
+  border: 1.5px solid currentColor;
+  border-radius: 3.5px;
+  opacity: 0.9;
+}
+
+/* the little positive terminal */
+.batt-glyph::after {
+  content: "";
+  position: absolute;
+  right: -3.5px;
+  top: 3px;
+  width: 2px;
+  height: 5px;
+  border-radius: 0 1.5px 1.5px 0;
+  background: currentColor;
+}
+
+.batt-glyph > i {
+  position: absolute;
+  left: 1.5px;
+  top: 1.5px;
+  bottom: 1.5px;
+  width: 0%;
+  border-radius: 1.5px;
+  background: currentColor;
+  transition: width var(--t-base) var(--ease-out);
+}
+
+.icon-btn.batt.low .batt-glyph > i {
+  background: #d9534f;
+}
+
+.icon-btn.batt.charging .batt-glyph > i {
+  background: #4caf50;
+}
+
+.batt-pct {
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+  min-width: 29px;
+  text-align: right;
+}
+
+/* A dot on the clock pill when notifications are waiting. */
+#clock-pill.has-notifications::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-left: 2px;
+}

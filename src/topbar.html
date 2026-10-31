@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>macui top bar</title>
+    <link rel="stylesheet" href="./shared/theme.css" />
+    <link rel="stylesheet" href="./topbar/topbar.css" />
+  </head>
+  <body>
+    <div class="bar">
+      <!-- Left: the app the user is currently working in -->
+      <button id="app-pill" class="pill glass left" type="button" aria-live="polite">
+        <img id="app-icon" class="app-icon" alt="" hidden />
+        <span id="app-name" class="label">Desktop</span>
+      </button>
+
+      <!-- Centre: day, date and time in the user's Windows format.
+           Clicking opens the Windows calendar / notification centre (Win+N). -->
+      <button id="clock-pill" class="pill glass centre" type="button"
+              title="Open the Windows calendar and notifications">
+        <span id="clock" class="label"></span>
+      </button>
+
+      <!-- Right: status. Each control opens the real Windows Quick Settings. -->
+      <div id="status-pill" class="pill glass right">
+        <button id="tray-chevron" class="icon-btn" type="button"
+                title="Show hidden tray icons">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5"
+            fill="none" stroke="currentColor" stroke-width="1.6"
+            stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button id="net-btn" class="icon-btn" type="button" title="Network"></button>
+        <button id="bt-btn" class="icon-btn" type="button" title="Bluetooth"></button>
+        <button id="vol-btn" class="icon-btn" type="button"
+                title="Volume — scroll to change"></button>
+        <button id="batt-btn" class="icon-btn batt" type="button" title="Battery">
+          <span id="batt-glyph" class="batt-glyph"><i id="batt-fill"></i></span>
+          <span id="batt-pct" class="batt-pct"></span>
+        </button>
+      </div>
+    </div>
+    <script type="module" src="./topbar/topbar.ts"></script>
+  </body>
+</html>

@@ -118,3 +118,61 @@ the shell to open Start.
 
 This *sends* a keystroke, it does not intercept or remap one, so no existing Windows
 shortcut is affected — which is the distinction the project's core rule turns on.
+
+---
+
+## D-009 — No system Acrylic; higher-opacity surfaces instead
+**Date:** 2026-10-31 · **Phase:** 2
+
+The brief asks for Acrylic/Mica "where supported", falling back to semi-transparent
+surfaces. Measured behaviour: `backdrop-filter: blur()` on a *transparent* Win32 window
+blurs only what the page itself draws behind the element, not the desktop — so the
+first build showed sharp VS Code rectangles straight through the top bar.
+
+Real Acrylic (`DwmExtendFrameIntoClientArea` / `SetWindowCompositionAttribute`) fills
+the whole **window rectangle**. Our surfaces are rounded islands inside a larger
+transparent window, so acrylic would paint a hard rectangle around every pill and the
+dock. Clipping it with `SetWindowRgn` is possible but costs the drop shadow and gives
+aliased corners, because a region has no antialiasing.
+
+**Decision:** take the documented fallback and raise surface opacity (dark 0.90, light
+0.88) so the islands read cleanly on any background. This keeps the exact geometry the
+brief specifies — 16px radius, 1px light border, soft shadow, antialiased corners —
+which it is far more specific about than the blur. Noted for the user's visual check.
+
+---
+
+## D-010 — Work area reserved by a silent SPI_SETWORKAREA, not an appbar
+**Date:** 2026-10-31 · **Phase:** 2
+
+The top bar is permanently visible, so it must reserve screen space or maximised
+windows slide underneath it. Three approaches were tried:
+
+1. `SPI_SETWORKAREA` **with** `SPIF_SENDCHANGE` — did not stick. Broadcasting
+   `WM_SETTINGCHANGE` makes the shell recompute the work area from its registered
+   appbars and discard ours. Measured: reverted within a second.
+2. Registering a real **appbar** (`SHAppBarMessage`) — this reserved the strip
+   correctly, but it also made the shell take charge of its own bars again and
+   **un-hide the Windows taskbar**, which defeats the entire point. It additionally
+   moved our window below its own reserved strip.
+3. `SPI_SETWORKAREA` **without** the broadcast — sticks, and the taskbar stays hidden.
+   Maximised windows still honour it because they query the work area as they maximise.
+
+**Decision:** option 3. Because a silent write has no notification to hook, the existing
+auto-hide sampler re-asserts it roughly every 2.5 s (a single cheap query) in case a
+display change or shell event resets it. `src/win/appbar.rs` is left in the tree,
+unused, as a working reference if a future phase needs genuine appbar semantics.
+
+---
+
+## D-011 — Frontend asks for auto-hide state at startup
+**Date:** 2026-10-31 · **Phase:** 2
+
+The sampler emits `dock:reveal` / `dock:conceal` only on a *change*. Anything emitted
+before the webview has attached its listener is lost permanently. If the pointer
+happened to be at the bottom edge when the app launched, the one reveal was emitted
+too early and the dock stayed concealed until the user moved the pointer away and back.
+
+**Decision:** keep the events for liveness, but have the dock call `cmd_dock_revealed`
+once after attaching its listeners and sync to the real state. Events are a
+notification channel, not a source of truth.

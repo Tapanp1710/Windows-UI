@@ -40,7 +40,7 @@
   --fs-label: 14px;
 
   /* --- light surfaces ------------------------------------------------------ */
-  --glass-bg: rgba(255, 253, 250, 0.72);
+  --glass-bg: rgba(255, 253, 250, 0.88);
   --glass-border: rgba(255, 255, 255, 0.75);
   --glass-edge: rgba(120, 95, 70, 0.12);
   --glass-shadow:
@@ -56,14 +56,14 @@
   --accent: #e8823e;
   --running-dot: rgba(44, 35, 32, 0.55);
 
-  --tooltip-bg: rgba(252, 248, 243, 0.92);
+  --tooltip-bg: rgba(252, 248, 243, 0.96);
   --divider: rgba(90, 70, 55, 0.18);
 }
 
 /* Follow Windows' dark mode, unless settings forced light. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --glass-bg: rgba(42, 34, 30, 0.68);
+    --glass-bg: rgba(38, 31, 27, 0.90);
     --glass-border: rgba(255, 240, 225, 0.14);
     --glass-edge: rgba(0, 0, 0, 0.35);
     --glass-shadow:
@@ -71,7 +71,7 @@
       0 8px 24px rgba(0, 0, 0, 0.40),
       0 20px 48px rgba(0, 0, 0, 0.32);
 
-    --plate-bg: rgba(255, 248, 240, 0.12);
+    --plate-bg: rgba(255, 248, 240, 0.14);
     --plate-border: rgba(255, 240, 225, 0.18);
 
     --text: #f6ece4;
@@ -79,27 +79,27 @@
     --accent: #ffa866;
     --running-dot: rgba(246, 236, 228, 0.70);
 
-    --tooltip-bg: rgba(46, 38, 33, 0.92);
+    --tooltip-bg: rgba(44, 36, 31, 0.96);
     --divider: rgba(255, 240, 225, 0.16);
   }
 }
 
 /* Settings can force dark regardless of the Windows setting. */
 :root[data-theme="dark"] {
-  --glass-bg: rgba(42, 34, 30, 0.68);
+  --glass-bg: rgba(38, 31, 27, 0.90);
   --glass-border: rgba(255, 240, 225, 0.14);
   --glass-edge: rgba(0, 0, 0, 0.35);
   --glass-shadow:
     0 1px 2px rgba(0, 0, 0, 0.30),
     0 8px 24px rgba(0, 0, 0, 0.40),
     0 20px 48px rgba(0, 0, 0, 0.32);
-  --plate-bg: rgba(255, 248, 240, 0.12);
+  --plate-bg: rgba(255, 248, 240, 0.14);
   --plate-border: rgba(255, 240, 225, 0.18);
   --text: #f6ece4;
   --text-dim: rgba(246, 236, 228, 0.60);
   --accent: #ffa866;
   --running-dot: rgba(246, 236, 228, 0.70);
-  --tooltip-bg: rgba(46, 38, 33, 0.92);
+  --tooltip-bg: rgba(44, 36, 31, 0.96);
   --divider: rgba(255, 240, 225, 0.16);
 }
 
@@ -148,9 +148,11 @@ body {
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-bar);
   box-shadow: var(--glass-shadow);
-  /* Blurs whatever the compositor puts behind a transparent window. Where the
-     platform does not support it the surface simply stays translucent, which is the
-     documented fallback. */
+  /* Note: on a transparent Win32 window `backdrop-filter` blurs only what the PAGE
+     draws behind the element, not the desktop, so it does almost nothing here. The
+     surfaces therefore carry enough opacity to read cleanly on their own; the filter
+     is kept because it costs nothing and does help where a panel overlaps another of
+     our own surfaces. See DECISIONS D-009 for why system Acrylic was not used. */
   backdrop-filter: blur(24px) saturate(165%);
   -webkit-backdrop-filter: blur(24px) saturate(165%);
 }

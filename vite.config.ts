@@ -15,6 +15,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         dock: resolve(__dirname, "src/dock.html"),
+        topbar: resolve(__dirname, "src/topbar.html"),
       },
     },
   },

@@ -19,6 +19,8 @@ pub struct Settings {
     pub pins_imported: bool,
 
     pub dock_enabled: bool,
+    pub topbar_enabled: bool,
+    pub topbar_auto_hide: bool,
     pub dock_always_visible: bool,
     pub dock_icon_size: u32,
     pub dock_magnification: bool,
@@ -48,6 +50,8 @@ impl Default for Settings {
             pinned: Vec::new(),
             pins_imported: false,
             dock_enabled: true,
+            topbar_enabled: true,
+            topbar_auto_hide: false,
             dock_always_visible: false,
             dock_icon_size: 44,
             dock_magnification: true,

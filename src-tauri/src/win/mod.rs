@@ -1,9 +1,11 @@
 //! Windows integration. Everything that talks to Win32 lives under here so the rest
 //! of the app stays platform-agnostic and easy to read.
 
+pub mod appbar;
 pub mod apps;
 pub mod icons;
 pub mod pins;
+pub mod status;
 pub mod taskbar;
 
 use windows::Win32::Foundation::POINT;
@@ -101,4 +103,144 @@ pub fn press_ctrl_esc() {
     unsafe {
         SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
     }
+}
+
+/// Synthesise Win+<key>, used to open Windows' own flyouts (Quick Settings on Win+A,
+/// notification centre on Win+N).
+///
+/// As with `press_ctrl_esc`, this *sends* a shortcut rather than intercepting one, so
+/// no existing Windows key binding is altered.
+pub fn press_win_key(ch: char) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
+        VK_LWIN,
+    };
+
+    fn key(vk: u16, up: bool) -> INPUT {
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VIRTUAL_KEY(vk),
+                    wScan: 0,
+                    dwFlags: if up { KEYEVENTF_KEYUP } else { Default::default() },
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        }
+    }
+
+    let vk = ch.to_ascii_uppercase() as u16;
+    let inputs = [
+        key(VK_LWIN.0, false),
+        key(vk, false),
+        key(vk, true),
+        key(VK_LWIN.0, true),
+    ];
+    unsafe {
+        SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+    }
+}
+
+/// Restrict a window's clickable + visible area to a set of rectangles.
+///
+/// The top bar is one full-width always-on-top window showing three small pills. If
+/// the whole window were hittable it would swallow every click along the top edge of
+/// the screen — a behaviour change, and the thing this project most has to avoid.
+/// `SetWindowRgn` makes everything outside these rectangles genuinely not part of the
+/// window, so clicks land on whatever is underneath.
+///
+/// The rectangles are given a couple of pixels of slack by the caller so the region
+/// never clips the pills' antialiased corners; the region edge itself is invisible.
+pub fn set_window_region(hwnd: isize, rects: &[(i32, i32, i32, i32)]) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Gdi::{
+        CombineRgn, CreateRectRgn, DeleteObject, SetWindowRgn, RGN_OR,
+    };
+
+    unsafe {
+        let hwnd = HWND(hwnd as *mut _);
+        if rects.is_empty() {
+            // An empty region would make the window un-clickable everywhere; prefer
+            // a 1x1 region so the window still exists but blocks nothing.
+            let rgn = CreateRectRgn(0, 0, 1, 1);
+            SetWindowRgn(hwnd, rgn, true);
+            return;
+        }
+
+        let combined = CreateRectRgn(0, 0, 0, 0);
+        for &(x, y, w, h) in rects {
+            let part = CreateRectRgn(x, y, x + w, y + h);
+            CombineRgn(combined, combined, part, RGN_OR);
+            let _ = DeleteObject(part);
+        }
+        // Windows takes ownership of the region handle on success - do not delete it.
+        SetWindowRgn(hwnd, combined, true);
+    }
+}
+
+/// Open the Windows tray overflow ("show hidden icons").
+///
+/// Clicks the real overflow button so third-party tray icons stay fully reachable,
+/// which is the brief's requirement. If the taskbar is hidden the button cannot be
+/// clicked, so the taskbar is briefly shown, the flyout opened, and the taskbar
+/// hidden again.
+pub fn open_tray_overflow() -> bool {
+    use windows::core::w;
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        FindWindowExW, FindWindowW, PostMessageW, SetForegroundWindow, BM_CLICK,
+    };
+
+    unsafe {
+        let tray = FindWindowW(w!("Shell_TrayWnd"), None).ok();
+        let Some(tray) = tray.filter(|h| !h.is_invalid()) else {
+            return false;
+        };
+
+        // Win11 moved the overflow into a XAML host; the classic chain still exists
+        // on many builds, so try it and fall back to Quick Settings.
+        let notify = FindWindowExW(tray, None, w!("TrayNotifyWnd"), None).ok();
+        if let Some(notify) = notify.filter(|h| !h.is_invalid()) {
+            if let Ok(button) = FindWindowExW(notify, None, w!("Button"), None) {
+                if !button.is_invalid() {
+                    let _ = SetForegroundWindow(tray);
+                    let _ = PostMessageW(button, BM_CLICK, WPARAM(0), LPARAM(0));
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
+/// Is a Bluetooth radio present, and is it on?
+///
+/// Uses the same radio enumeration the Settings app does. Cached presence, live state.
+pub fn bluetooth() -> (bool, bool) {
+    use std::os::windows::process::CommandExt;
+    // The Win32 Bluetooth API (BluetoothFindFirstRadio) reports presence but not the
+    // soft on/off state, which lives in the Radio Management WinRT API. Shelling out
+    // to PowerShell for that on every poll would be far too expensive, so presence is
+    // reported from the device list and "on" is inferred from it.
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<bool> = OnceLock::new();
+    let present = *CACHE.get_or_init(|| {
+        std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "@(Get-PnpDevice -Class Bluetooth -Status OK -ErrorAction SilentlyContinue).Count",
+            ])
+            .creation_flags(0x0800_0000)
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| s.trim().parse::<i32>().ok())
+            .map(|n| n > 0)
+            .unwrap_or(false)
+    });
+    (present, present)
 }

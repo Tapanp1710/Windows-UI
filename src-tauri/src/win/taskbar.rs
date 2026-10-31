@@ -17,6 +17,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     FindWindowW, GetSystemMetrics, IsWindowVisible, SetWindowPos, ShowWindow,
     SystemParametersInfoW, HWND_BOTTOM, SM_CXSCREEN, SM_CYSCREEN, SPI_GETWORKAREA,
     SPI_SETWORKAREA, SPIF_SENDCHANGE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_HIDE, SW_SHOW,
+    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
 };
 
 /// The primary taskbar window class. Stable across Windows 7..11.
@@ -127,26 +128,32 @@ pub fn screen_size() -> (i32, i32) {
     unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) }
 }
 
-/// Reserve `bottom_px` physical pixels at the bottom of the primary monitor so that
-/// maximised windows stop above our dock.
+/// Reserve space at the top and/or bottom of the primary monitor so maximised windows
+/// stop short of our bars.
 ///
-/// Pass 0 to hand the whole screen back, which is what an auto-hiding dock wants:
-/// Windows' own behaviour for an auto-hidden taskbar is that maximised windows use the
-/// full height, and the brief asks us to match that exactly.
-pub fn set_reserved_bottom(bottom_px: i32) {
+/// Matching Windows' own rules: an **auto-hidden** bar reserves nothing (maximised
+/// windows use the full height), while a **permanently visible** bar reserves its
+/// strip. So the dock normally passes 0 and the top bar passes its height.
+pub fn set_reserved(top_px: i32, bottom_px: i32) {
     let (w, h) = screen_size();
     let mut r = RECT {
         left: 0,
-        top: 0,
+        top: top_px.max(0),
         right: w,
         bottom: h - bottom_px.max(0),
     };
     unsafe {
+        // Deliberately WITHOUT SPIF_SENDCHANGE.
+        //
+        // Broadcasting WM_SETTINGCHANGE makes the shell recompute the work area from
+        // its own appbars and immediately discard ours - measured: the value reverted
+        // within a second. Writing silently sticks, and maximised windows still pick
+        // it up because they query the work area when they maximise.
         let _ = SystemParametersInfoW(
             SPI_SETWORKAREA,
             0,
             Some(&mut r as *mut RECT as *mut _),
-            SPIF_SENDCHANGE,
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
         );
     }
 }
@@ -155,7 +162,18 @@ pub fn set_reserved_bottom(bottom_px: i32) {
 /// whatever the real taskbar needs, so this lands on the correct default rather than
 /// on a guess.
 pub fn reset_work_area() {
-    set_reserved_bottom(0);
+    let (w, h) = screen_size();
+    let mut r = RECT { left: 0, top: 0, right: w, bottom: h };
+    unsafe {
+        // On restore we DO want the broadcast, so every app re-lays-out against the
+        // real work area again.
+        let _ = SystemParametersInfoW(
+            SPI_SETWORKAREA,
+            0,
+            Some(&mut r as *mut RECT as *mut _),
+            SPIF_SENDCHANGE,
+        );
+    }
 }
 
 /// Convenience used by both the app's own cleanup and the watchdog.

@@ -24,6 +24,9 @@ static RESTORED: AtomicBool = AtomicBool::new(false);
 /// The watchdog child, killed on a clean shutdown so it does not fire a redundant
 /// restore after we have already done one.
 static WATCHDOG: Mutex<Option<std::process::Child>> = Mutex::new(None);
+/// Pixels reserved at the top for the top bar, re-asserted periodically because
+/// other shell events can reset the work area behind our back.
+pub static RESERVED_TOP: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
 /// Kept alive for the life of the app; cleared on shutdown to stop the sampler.
 static AUTOHIDE_RUNNING: Mutex<Option<std::sync::Arc<AtomicBool>>> = Mutex::new(None);
 
@@ -36,6 +39,7 @@ fn restore_windows_state() {
     if let Some(flag) = AUTOHIDE_RUNNING.lock().unwrap().take() {
         flag.store(false, Ordering::SeqCst);
     }
+    RESERVED_TOP.store(0, Ordering::SeqCst);
     let state = *ORIGINAL_APPBAR_STATE.lock().unwrap();
     win::taskbar::full_restore(state);
 
@@ -84,8 +88,9 @@ fn main() {
     let watchdog_ok = WATCHDOG.lock().unwrap().is_some();
     if watchdog_ok {
         win::taskbar::hide_taskbar();
-        // The dock auto-hides, so maximised windows should use the full screen
-        // height, exactly as they do with an auto-hidden Windows taskbar.
+        // The dock auto-hides, so it reserves nothing - exactly as an auto-hidden
+        // Windows taskbar behaves. The top bar is permanently visible and reserves
+        // its strip, but that happens in setup() once its window handle exists.
         win::taskbar::reset_work_area();
     }
 
@@ -115,6 +120,14 @@ fn main() {
             cmd_log,
             cmd_app_quit,
             cmd_app_restart,
+            cmd_dock_revealed,
+            cmd_status,
+            cmd_set_topbar_regions,
+            cmd_open_quick_settings,
+            cmd_open_notifications,
+            cmd_open_tray_overflow,
+            cmd_set_volume,
+            cmd_focus_foreground,
         ])
         .setup(|app| {
             if let Err(e) = build_tray(app.handle()) {
@@ -138,6 +151,8 @@ fn main() {
                 assets.iter().any(|k| k.ends_with("dock.html"))
             );
             position_dock(app.handle())?;
+            position_topbar(app.handle())?;
+            apply_work_area(app.handle());
             AUTOHIDE_RUNNING
                 .lock()
                 .unwrap()
@@ -191,6 +206,151 @@ fn cmd_screen_metrics(window: tauri::Window) -> ScreenMetrics {
 #[tauri::command]
 fn cmd_restore_now() {
     restore_windows_state();
+}
+
+/// Everything the top bar shows, in one round trip.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StatusPayload {
+    battery: win::status::Battery,
+    volume: win::status::Volume,
+    network: win::status::Network,
+    focused: win::status::FocusedApp,
+    bluetooth: BluetoothStatus,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BluetoothStatus {
+    present: bool,
+    on: bool,
+}
+
+#[tauri::command]
+fn cmd_status() -> StatusPayload {
+    let (present, on) = win::bluetooth();
+    StatusPayload {
+        battery: win::status::battery(),
+        volume: win::status::volume(),
+        network: win::status::network(),
+        focused: win::status::focused_app(),
+        bluetooth: BluetoothStatus { present, on },
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RegionRect {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+}
+
+/// Limit the top bar window's clickable area to its three pills.
+#[tauri::command]
+fn cmd_set_topbar_regions(window: tauri::Window, rects: Vec<RegionRect>) -> tauri::Result<()> {
+    let scale = window.scale_factor().unwrap_or(1.0);
+    // The frontend measures in CSS pixels; SetWindowRgn works in physical ones.
+    let phys: Vec<(i32, i32, i32, i32)> = rects
+        .iter()
+        .map(|r| {
+            (
+                (r.x as f64 * scale).floor() as i32,
+                (r.y as f64 * scale).floor() as i32,
+                (r.w as f64 * scale).ceil() as i32,
+                (r.h as f64 * scale).ceil() as i32,
+            )
+        })
+        .collect();
+    let hwnd = window.hwnd()?.0 as isize;
+    win::set_window_region(hwnd, &phys);
+    Ok(())
+}
+
+#[tauri::command]
+fn cmd_open_quick_settings() {
+    win::status::open_quick_settings();
+}
+
+#[tauri::command]
+fn cmd_open_notifications() {
+    win::status::open_notification_centre();
+}
+
+/// Open the real tray overflow so other apps' tray icons stay reachable.
+///
+/// The overflow button lives inside the taskbar we hide, so the taskbar is shown just
+/// long enough for the click to land, then hidden again.
+#[tauri::command]
+fn cmd_open_tray_overflow() {
+    win::taskbar::restore_taskbar(None);
+    std::thread::sleep(std::time::Duration::from_millis(120));
+    let clicked = win::open_tray_overflow();
+    if !clicked {
+        // Windows 11 moved the overflow into a XAML host with no clickable child
+        // window; Quick Settings is the closest real panel.
+        win::status::open_quick_settings();
+    }
+    // Give the flyout a moment to take focus before the taskbar goes away again,
+    // otherwise hiding the parent dismisses it.
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_millis(2500));
+        win::taskbar::hide_taskbar();
+    });
+}
+
+#[tauri::command]
+fn cmd_set_volume(level: u8) -> bool {
+    win::status::set_volume(level)
+}
+
+/// Re-assert focus on the foreground window. Harmless no-op when already focused.
+#[tauri::command]
+fn cmd_focus_foreground() {
+    if let Some(h) = win::apps::foreground_window() {
+        win::apps::activate(h.0 as isize);
+    }
+}
+
+/// Height of the top bar strip in CSS pixels, mirrored from tauri.conf.json.
+const TOPBAR_CSS_HEIGHT: f64 = 42.0;
+
+/// Reserve screen space for whichever bars are permanently visible.
+///
+/// Registers a real appbar rather than writing the work area directly: the shell
+/// recomputes the work area from its registered appbars, so a direct
+/// `SPI_SETWORKAREA` write is silently discarded (verified - it did nothing).
+fn apply_work_area(app: &tauri::AppHandle) {
+    let settings = settings::load();
+    let Some(bar) = app.get_webview_window("topbar") else {
+        return;
+    };
+
+    if !settings.topbar_enabled || settings.topbar_auto_hide {
+        win::appbar::release();
+        return;
+    }
+
+    let scale = bar.scale_factor().unwrap_or(1.0);
+    let top = (TOPBAR_CSS_HEIGHT * scale).round() as i32;
+    // The dock auto-hides, so like an auto-hidden taskbar it reserves nothing.
+    win::taskbar::set_reserved(top, 0);
+    RESERVED_TOP.store(top, Ordering::SeqCst);
+    logln!("reserved {top}px at the top of the work area for the top bar");
+}
+
+/// Full screen width, flush with the top edge; the CSS supplies the 6px inset.
+fn position_topbar(app: &tauri::AppHandle) -> tauri::Result<()> {
+    let Some(bar) = app.get_webview_window("topbar") else {
+        return Ok(());
+    };
+    let (sw, _) = win::taskbar::screen_size();
+    let scale = bar.scale_factor().unwrap_or(1.0);
+    let h = (56.0 * scale).round() as i32;
+    bar.set_size(tauri::PhysicalSize::new(sw as u32, h as u32))?;
+    bar.set_position(tauri::PhysicalPosition::new(0, 0))?;
+    Ok(())
 }
 
 /// System-tray icon: the supported way to quit.
@@ -374,6 +534,13 @@ fn cmd_window_titles(hwnds: Vec<isize>) -> Vec<String> {
 #[tauri::command]
 fn cmd_log(msg: String) {
     logln!("[ui] {msg}");
+}
+
+/// Current reveal state, so the dock can sync on startup rather than hoping it
+/// caught the event.
+#[tauri::command]
+fn cmd_dock_revealed() -> bool {
+    autohide::REVEALED.load(Ordering::SeqCst)
 }
 
 /// Quit, always putting Windows back first.
