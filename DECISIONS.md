@@ -691,3 +691,28 @@ does nothing, or that fights the OS over who owns a setting, is not.
 
 All eleven are shown at once rather than paged behind a chevron: a control hidden
 behind a gesture you have to discover first is not "available at the top".
+
+---
+
+## D-037 — `baseline-windows.json` is per-machine state, not source
+**Date:** 2026-10-31 · **Phase:** portability
+
+The file records what Windows looked like **before** this app touched it: the taskbar's
+auto-hide and always-on-top bits, the work area, the theme and the wallpaper path.
+`restore-windows.ps1` reads it to put the machine back exactly as it was.
+
+It was committed. Clone the repo onto a second laptop and that laptop inherits the
+first one's "before" — `capture-baseline.ps1` declines to overwrite an existing
+baseline, so the wrong one survives, and `restore-windows.ps1` then sets the taskbar to
+whatever the *first* machine happened to be and reports it as a faithful restore. A
+baseline from elsewhere is worse than no baseline, because no baseline falls back to
+the Windows factory default, which is at least a defensible guess.
+
+**Decision:** untracked and gitignored, and stamped with `$env:COMPUTERNAME` on
+capture. `restore-windows.ps1` refuses a baseline whose stamp is not this machine and
+says why. A file without a stamp is still accepted — the only ones that exist predate
+the stamp and are on the machine that wrote them.
+
+The same change dropped a committed `__pycache__/*.pyc` and added the README a clone
+needs in order to build at all: the GNU Rust target and a portable MinGW at the exact
+path `scripts\env.ps1` expects are not guessable from the source.
