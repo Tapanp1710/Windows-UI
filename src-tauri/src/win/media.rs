@@ -30,12 +30,23 @@ pub struct NowPlaying {
 }
 
 static SNAPSHOT: Mutex<Option<NowPlaying>> = Mutex::new(None);
+/// Album art for the current track, as a data URL, with the title it belongs to.
+///
+/// Kept apart from the snapshot because it is tens of kilobytes: the island polls
+/// the snapshot every couple of seconds and asks for the art only when the title it
+/// is showing has changed.
+static ART: Mutex<Option<(String, String)>> = Mutex::new(None);
 
 /// Pending transport command: 0 none, 1 play/pause, 2 next, 3 previous.
 static PENDING: AtomicU8 = AtomicU8::new(0);
 
 pub fn now_playing() -> NowPlaying {
     SNAPSHOT.lock().unwrap().clone().unwrap_or_default()
+}
+
+/// Album art for the track currently in the snapshot, if we have it yet.
+pub fn art() -> Option<String> {
+    ART.lock().unwrap().as_ref().map(|(_, url)| url.clone())
 }
 
 /// Queue a transport command for the media thread. `what` is "toggle", "next" or
@@ -69,11 +80,29 @@ pub fn start() {
             }
 
             let next = read().unwrap_or_default();
+            let title_changed = SNAPSHOT
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|p| p.title != next.title)
+                .unwrap_or(true);
+
             let mut slot = SNAPSHOT.lock().unwrap();
             if slot.as_ref() != Some(&next) {
-                *slot = Some(next);
+                *slot = Some(next.clone());
             }
             drop(slot);
+
+            // Artwork is the one expensive read here - a stream copy of a bitmap -
+            // so it only happens when the track actually changed.
+            if title_changed {
+                let url = if next.active {
+                    read_art().ok().flatten()
+                } else {
+                    None
+                };
+                *ART.lock().unwrap() = url.map(|u| (next.title.clone(), u));
+            }
 
             // A transport command should feel immediate, so the loop ticks four times
             // a second but only touches WinRT when something changed or a command is
@@ -124,6 +153,41 @@ fn read() -> windows::core::Result<NowPlaying> {
 
 /// Turn an AUMID into something a person would recognise: `Spotify.exe` ->
 /// `Spotify`, `Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic` -> `ZuneMusic`.
+/// Pull the session's thumbnail out as a data URL.
+///
+/// The media session hands back a stream reference rather than bytes, so this opens
+/// it, reads it whole (artwork is a few tens of kilobytes) and base64s it. Returning
+/// a data URL means the page needs no file access and nothing is written to disk.
+fn read_art() -> windows::core::Result<Option<String>> {
+    use base64::Engine;
+    use windows::Storage::Streams::DataReader;
+
+    let session = match current_session() {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+    let props = session.TryGetMediaPropertiesAsync()?.get()?;
+    let Ok(thumb) = props.Thumbnail() else {
+        return Ok(None);
+    };
+
+    let stream = thumb.OpenReadAsync()?.get()?;
+    let size = stream.Size()? as u32;
+    if size == 0 || size > 4 * 1024 * 1024 {
+        return Ok(None);
+    }
+    let mime = stream.ContentType().map(|c| c.to_string()).unwrap_or_default();
+    let mime = if mime.is_empty() { "image/png".to_string() } else { mime };
+
+    let reader = DataReader::CreateDataReader(&stream)?;
+    reader.LoadAsync(size)?.get()?;
+    let mut buf = vec![0u8; size as usize];
+    reader.ReadBytes(&mut buf)?;
+
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&buf);
+    Ok(Some(format!("data:{mime};base64,{b64}")))
+}
+
 fn pretty_source(aumid: &str) -> String {
     // "Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic" -> the part after '!'
     let tail = aumid.rsplit('!').next().unwrap_or(aumid);

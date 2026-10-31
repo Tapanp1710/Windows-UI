@@ -121,6 +121,11 @@ function place(id: WidgetId): void {
 
 let lastRegions = "";
 
+/** Must match --shadow-reach in theme.css. */
+const PAD = 18;
+/** Must match --radius-card in theme.css. */
+const CARD_RADIUS = 12;
+
 /**
  * Hand Rust the rectangles the window is allowed to receive clicks in.
  *
@@ -139,13 +144,15 @@ async function syncRegions(force?: "all"): Promise<void> {
           .filter((card) => card && card.offsetWidth > 0)
           .map((card) => {
             const r = card.getBoundingClientRect();
-            // A couple of px of slack so the region never clips the card's own
-            // rounded corners or its shadow's hit area.
+            // Inflated by the shadow's reach, with a matching corner radius. A
+            // region tight to the card clipped the shadow into four hard corners
+            // and squared off the rounded ones - the cards read as sharp slabs.
             return {
-              x: Math.floor(r.left) - 2,
-              y: Math.floor(r.top) - 2,
-              w: Math.ceil(r.width) + 4,
-              h: Math.ceil(r.height) + 4,
+              x: Math.floor(r.left) - PAD,
+              y: Math.floor(r.top) - PAD,
+              w: Math.ceil(r.width) + PAD * 2,
+              h: Math.ceil(r.height) + PAD * 2,
+              r: CARD_RADIUS + PAD,
             };
           });
 

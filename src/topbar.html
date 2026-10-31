@@ -35,19 +35,48 @@
     <link rel="stylesheet" href="./topbar/topbar.css" />
   </head>
   <body>
-    <div class="bar">
-      <!-- Left: the app the user is currently working in -->
-      <button id="app-pill" class="pill glass left" type="button" aria-live="polite">
+    <div class="bar hidden no-anim" id="bar">
+      <!-- Left: the app the user is currently working in.
+           Hidden unless switched on in settings - it repeats what the window in
+           front of you already says. -->
+      <button id="app-pill" class="pill glass left" type="button" aria-live="polite" hidden>
         <img id="app-icon" class="app-icon" alt="" hidden />
         <span id="app-name" class="label">Desktop</span>
       </button>
 
-      <!-- Centre: day, date and time in the user's Windows format.
-           Clicking opens the Windows calendar / notification centre (Win+N). -->
-      <button id="clock-pill" class="pill glass centre" type="button"
-              title="Open the Windows calendar and notifications">
-        <span id="clock" class="label"></span>
-      </button>
+      <!-- Centre: the island.
+           Collapsed it is the clock. Hovering expands it to whatever is playing;
+           it also expands by itself for a few seconds when the volume changes, the
+           charger goes in or out, or the track changes, then collapses again.
+           Clicking opens the calendar panel. -->
+      <div id="island" class="island centre" data-state="idle">
+        <button id="clock-pill" class="pill glass island-pill" type="button"
+                aria-label="Calendar">
+          <span class="island-lead" id="island-lead" aria-hidden="true"></span>
+          <span id="clock" class="label"></span>
+          <span class="island-trail" id="island-trail" aria-hidden="true"></span>
+        </button>
+
+        <div class="island-body glass" id="island-body" aria-hidden="true">
+          <div class="np">
+            <div class="np-art" id="np-art"></div>
+            <div class="np-meta">
+              <div class="np-title" id="np-title">Nothing playing</div>
+              <div class="np-artist" id="np-artist"></div>
+              <div class="np-controls">
+                <button id="np-prev" type="button" aria-label="Previous track"></button>
+                <button id="np-play" type="button" aria-label="Play or pause"></button>
+                <button id="np-next" type="button" aria-label="Next track"></button>
+              </div>
+            </div>
+          </div>
+          <div class="np-activity" id="np-activity" hidden>
+            <span class="act-icon" id="act-icon"></span>
+            <span class="act-text" id="act-text"></span>
+            <span class="act-meter"><i id="act-bar"></i></span>
+          </div>
+        </div>
+      </div>
 
       <!-- Right: status. Each control opens the real Windows Quick Settings. -->
       <div id="status-pill" class="pill glass right">

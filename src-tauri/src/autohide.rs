@@ -47,6 +47,17 @@ pub static ALWAYS_VISIBLE: AtomicBool = AtomicBool::new(false);
 /// whenever the pointer happened to already be at the bottom edge at launch.
 pub static REVEALED: AtomicBool = AtomicBool::new(false);
 
+/// The same, for the top bar.
+pub static TOPBAR_REVEALED: AtomicBool = AtomicBool::new(false);
+/// Height of the top bar window in physical pixels, published by the main thread.
+/// While the bar is showing, the pointer anywhere inside this strip keeps it up.
+pub static TOPBAR_HEIGHT: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+/// Set from settings; when false the top bar is simply always there.
+pub static TOPBAR_AUTO_HIDE: AtomicBool = AtomicBool::new(true);
+/// True while one of the bar's panels is open. The bar sliding away from under an
+/// open flyout looks like a bug, so it is held down until the panel closes.
+pub static TOPBAR_PINNED: AtomicBool = AtomicBool::new(false);
+
 /// Dock window rect in physical pixels: (left, top, right, bottom).
 /// Published by the main thread, read by the sampler.
 pub static DOCK_RECT: Mutex<Option<(i32, i32, i32, i32)>> = Mutex::new(None);
@@ -68,6 +79,7 @@ pub fn start(app: AppHandle) -> Arc<AtomicBool> {
 
     std::thread::spawn(move || {
         let mut leave_at: Option<Instant> = None;
+        let mut topbar_leave_at: Option<Instant> = None;
         let mut ticks: u32 = 0;
 
         // Start concealed: the dock should be out of the way until summoned. The
@@ -76,6 +88,10 @@ pub fn start(app: AppHandle) -> Arc<AtomicBool> {
         let _ = app.emit("dock:conceal", ());
         let mut revealed = false;
         REVEALED.store(false, Ordering::SeqCst);
+        // The top bar starts concealed too, and for the same reason: the frontend
+        // starts in the concealed CSS state and the sampler only emits on a change.
+        let _ = app.emit("topbar:conceal", ());
+        TOPBAR_REVEALED.store(false, Ordering::SeqCst);
         crate::logln!("autohide sampler started");
 
         let (_, screen_h) = crate::win::taskbar::screen_size();
@@ -113,6 +129,52 @@ pub fn start(app: AppHandle) -> Arc<AtomicBool> {
             // the work area, and a silently-written reservation has no notification
             // to hook, so it is checked here rather than trusted once.
             ticks = ticks.wrapping_add(1);
+
+            // --- dismiss an open panel on a click outside it --------------------
+            // The panel does not take focus, so "you clicked elsewhere" has to be
+            // observed rather than delivered. GetAsyncKeyState is a read of the
+            // current button state; it installs nothing and sees nothing but the
+            // buttons' own up/down flags.
+            if let Some((l, t, r, b)) = *crate::PANEL_RECT.lock().unwrap() {
+                let outside = cx < l || cx >= r || cy < t || cy >= b;
+                if outside && crate::win::mouse_button_down() {
+                    crate::logln!("panel dismissed: clicked outside");
+                    crate::close_panel(&app);
+                }
+            }
+
+            // --- top bar ------------------------------------------------------
+            // Same gesture as the dock, mirrored: touch the top edge and it comes
+            // down; move away and it goes back up. While it is down, the pointer
+            // anywhere in its strip keeps it there, so it cannot slide away from
+            // under a click.
+            {
+                let auto = TOPBAR_AUTO_HIDE.load(Ordering::Relaxed);
+                let shown = TOPBAR_REVEALED.load(Ordering::Relaxed);
+                let want = if !auto || TOPBAR_PINNED.load(Ordering::Relaxed) {
+                    true
+                } else {
+                    cy <= TRIGGER_PX || (shown && cy < TOPBAR_HEIGHT.load(Ordering::Relaxed))
+                };
+
+                if want {
+                    topbar_leave_at = None;
+                    if !shown {
+                        TOPBAR_REVEALED.store(true, Ordering::SeqCst);
+                        let _ = app.emit("topbar:reveal", ());
+                    }
+                } else if shown {
+                    match topbar_leave_at {
+                        None => topbar_leave_at = Some(Instant::now() + CONCEAL_DELAY),
+                        Some(t) if Instant::now() >= t => {
+                            TOPBAR_REVEALED.store(false, Ordering::SeqCst);
+                            topbar_leave_at = None;
+                            let _ = app.emit("topbar:conceal", ());
+                        }
+                        Some(_) => {}
+                    }
+                }
+            }
 
             // Remember what the user was working in, for the widget layer to hand
             // focus back to. Sampled here rather than hooked, for the same reason

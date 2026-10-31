@@ -31,6 +31,7 @@ interface Settings {
   dockEnabled: boolean;
   topbarEnabled: boolean;
   topbarAutoHide: boolean;
+  topbarAppPill: boolean;
   dockAlwaysVisible: boolean;
   dockIconSize: number;
   dockMagnification: boolean;
@@ -64,6 +65,14 @@ async function patch(key: keyof Settings, value: unknown): Promise<void> {
   }
 }
 
+/** Which theme this window has actually ended up in, "auto" resolved. */
+function isDark(): boolean {
+  const t = config.settings.theme;
+  if (t === "dark") return true;
+  if (t === "light") return false;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
 function applyOwnAppearance(): void {
   const root = document.documentElement;
   const theme = config.settings.theme;
@@ -71,6 +80,23 @@ function applyOwnAppearance(): void {
   else delete root.dataset.theme;
   root.dataset.iconShape = config.settings.iconShape;
   root.style.setProperty("--anim-scale", String(config.settings.animationSpeed));
+  void applyGlass();
+}
+
+/**
+ * Ask Windows to blur the desktop behind this window.
+ *
+ * Only marks the page as glass if the call actually succeeded, so a machine where
+ * the composition attribute is missing keeps the painted panel and stays readable.
+ */
+async function applyGlass(): Promise<void> {
+  try {
+    const ok = await invoke<boolean>("cmd_glass", { dark: isDark() });
+    if (ok) document.documentElement.dataset.acrylic = "on";
+    else delete document.documentElement.dataset.acrylic;
+  } catch {
+    /* painted fallback is fine */
+  }
 }
 
 /* ------------------------------------------------------------- controls */
@@ -255,6 +281,7 @@ async function main(): Promise<void> {
   toggle("dockMagnification", "dockMagnification");
   toggle("topbarEnabled", "topbarEnabled");
   toggle("topbarAutoHide", "topbarAutoHide");
+  toggle("topbarAppPill", "topbarAppPill");
 
   slider("dockIconSize", "dockIconSize", (n) => `${n} px`);
   slider("animationSpeed", "animationSpeed", (n) => (n === 0 ? "off" : `${n}×`));

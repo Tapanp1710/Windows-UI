@@ -10,16 +10,20 @@
  * click handler would have thrown all three away.
  */
 
+/* The WINDOW is the card here, not something drawn inside it: Rust gives it a
+   rounded region and fills that region with real acrylic, and Windows draws the
+   drop shadow around it. So no padding, and no shadow of our own. */
 body {
-  padding: var(--edge-margin);
+  padding: 0;
   display: flex;
 }
 
 .card {
-  /* Opaque, unlike every other surface in this project: this one is read rather
-     than glanced at, and a 12%-transparent panel over a high-contrast window shows
-     that window's text through its own. See --surface-solid. */
+  /* Fallback for a machine where the composition attribute is unavailable: stay
+     opaque and readable. `html[data-acrylic="on"]` below takes over when the real
+     blur is in place. */
   background: var(--surface-solid);
+  border-radius: 14px;
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -28,6 +32,20 @@ body {
   /* The window is shown by settings.ts only once painted; fade the card in so an
      opening settings window matches the motion of everything else. */
   animation: card-in var(--t-base) var(--ease-out) both;
+}
+
+/* Real glass is on: let it through, and drop the painted surface and shadow. */
+html[data-acrylic="on"] .card {
+  /* The WINDOW is the rounded, bordered, blurred shape now - DWM draws the corners
+     and the hairline. Anything drawn here would only be a second edge inside it. */
+  background: transparent;
+  box-shadow: none;
+  border: 0;
+  border-radius: 0;
+}
+
+html[data-acrylic="on"] body {
+  background: transparent;
 }
 
 @keyframes card-in {

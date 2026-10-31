@@ -43,10 +43,16 @@
   --glass-bg: rgba(255, 253, 250, 0.88);
   --glass-border: rgba(255, 255, 255, 0.75);
   --glass-edge: rgba(120, 95, 70, 0.12);
+  /* Every surface in this app lives inside a SetWindowRgn hit-test region, and a
+     shadow wider than that region's margin gets clipped into a hard-edged slab.
+     --shadow-reach is how far it can possibly extend (largest offset + largest
+     blur); the frontend inflates each region by exactly that much and rounds the
+     corners to match, so the shadow fades out to nothing inside the clip. Change
+     one and change the other. */
+  --shadow-reach: 18px;
   --glass-shadow:
-    0 1px 2px rgba(60, 40, 25, 0.10),
-    0 8px 24px rgba(60, 40, 25, 0.14),
-    0 20px 48px rgba(60, 40, 25, 0.10);
+    0 1px 2px rgba(60, 40, 25, 0.12),
+    0 4px 14px rgba(60, 40, 25, 0.20);
 
   --plate-bg: rgba(255, 255, 255, 0.70);
   --plate-border: rgba(255, 255, 255, 0.85);
@@ -73,9 +79,8 @@
     --glass-border: rgba(255, 240, 225, 0.14);
     --glass-edge: rgba(0, 0, 0, 0.35);
     --glass-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.30),
-      0 8px 24px rgba(0, 0, 0, 0.40),
-      0 20px 48px rgba(0, 0, 0, 0.32);
+      0 1px 2px rgba(0, 0, 0, 0.34),
+      0 4px 14px rgba(0, 0, 0, 0.42);
 
     --plate-bg: rgba(255, 248, 240, 0.14);
     --plate-border: rgba(255, 240, 225, 0.18);
@@ -97,9 +102,8 @@
   --glass-border: rgba(255, 240, 225, 0.14);
   --glass-edge: rgba(0, 0, 0, 0.35);
   --glass-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.30),
-    0 8px 24px rgba(0, 0, 0, 0.40),
-    0 20px 48px rgba(0, 0, 0, 0.32);
+    0 1px 2px rgba(0, 0, 0, 0.34),
+    0 4px 14px rgba(0, 0, 0, 0.42);
   --plate-bg: rgba(255, 248, 240, 0.14);
   --plate-border: rgba(255, 240, 225, 0.18);
   --text: #f6ece4;

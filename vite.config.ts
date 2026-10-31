@@ -18,6 +18,7 @@ export default defineConfig({
         topbar: resolve(__dirname, "src/topbar.html"),
         settings: resolve(__dirname, "src/settings.html"),
         widgets: resolve(__dirname, "src/widgets.html"),
+        panel: resolve(__dirname, "src/panel.html"),
       },
     },
   },

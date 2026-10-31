@@ -21,6 +21,13 @@ pub struct Settings {
     pub dock_enabled: bool,
     pub topbar_enabled: bool,
     pub topbar_auto_hide: bool,
+    /// The focused-app pill on the left of the top bar. Off by default: it is the
+    /// one pill that repeats what the window in front of you already says.
+    pub topbar_app_pill: bool,
+    /// The centre pill behaves as a Dynamic Island: it expands on hover to show
+    /// what is playing, and by itself for a moment when the volume changes, the
+    /// charger goes in or out, or the track changes.
+    pub island: bool,
     pub dock_always_visible: bool,
     pub dock_icon_size: u32,
     pub dock_magnification: bool,
@@ -80,7 +87,12 @@ impl Default for Settings {
             pins_imported: false,
             dock_enabled: true,
             topbar_enabled: true,
-            topbar_auto_hide: false,
+            // On by default. A permanently visible bar has to reserve its strip,
+            // which stops maximised windows using the whole screen; auto-hiding
+            // gives every pixel back and the bar is one pointer-flick away.
+            topbar_auto_hide: true,
+            topbar_app_pill: false,
+            island: true,
             dock_always_visible: false,
             dock_icon_size: 44,
             dock_magnification: true,

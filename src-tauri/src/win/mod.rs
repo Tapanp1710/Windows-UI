@@ -1,11 +1,13 @@
 //! Windows integration. Everything that talks to Win32 lives under here so the rest
 //! of the app stays platform-agnostic and easy to read.
 
+pub mod acrylic;
 pub mod appbar;
 pub mod apps;
 pub mod icons;
 pub mod media;
 pub mod pins;
+pub mod radios;
 pub mod status;
 pub mod sysinfo;
 pub mod taskbar;
@@ -153,12 +155,19 @@ pub fn press_win_key(ch: char) {
 /// `SetWindowRgn` makes everything outside these rectangles genuinely not part of the
 /// window, so clicks land on whatever is underneath.
 ///
-/// The rectangles are given a couple of pixels of slack by the caller so the region
-/// never clips the pills' antialiased corners; the region edge itself is invisible.
-pub fn set_window_region(hwnd: isize, rects: &[(i32, i32, i32, i32)]) {
+/// Each rectangle carries its own corner radius, and the caller inflates it to leave
+/// room for the surface's shadow.
+///
+/// Both matter visually, not just for hit-testing. A **rectangular** region cuts the
+/// corners off a rounded card and leaves the shadow behind as four hard corners - the
+/// card looks like a sharp-edged slab with a rounded picture painted on it. And a
+/// region tight to the card clips the shadow mid-fade, so it ends in a visible line
+/// instead of fading out. Rounded regions, inflated past where the shadow has fallen
+/// to nothing, fix both.
+pub fn set_window_region(hwnd: isize, rects: &[(i32, i32, i32, i32, i32)]) {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Gdi::{
-        CombineRgn, CreateRectRgn, DeleteObject, SetWindowRgn, RGN_OR,
+        CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, SetWindowRgn, RGN_OR,
     };
 
     unsafe {
@@ -172,8 +181,14 @@ pub fn set_window_region(hwnd: isize, rects: &[(i32, i32, i32, i32)]) {
         }
 
         let combined = CreateRectRgn(0, 0, 0, 0);
-        for &(x, y, w, h) in rects {
-            let part = CreateRectRgn(x, y, x + w, y + h);
+        for &(x, y, w, h, r) in rects {
+            // CreateRoundRectRgn takes the ellipse SIZE, which is twice the radius,
+            // and its right/bottom edges are exclusive.
+            let part = if r > 0 {
+                CreateRoundRectRgn(x, y, x + w + 1, y + h + 1, r * 2, r * 2)
+            } else {
+                CreateRectRgn(x, y, x + w, y + h)
+            };
             CombineRgn(combined, combined, part, RGN_OR);
             let _ = DeleteObject(part);
         }
@@ -274,5 +289,21 @@ pub fn place_above_desktop(hwnd_raw: isize) {
             0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
         );
+    }
+}
+
+/// Whether a mouse button is currently held down.
+///
+/// A plain read of the key state. This is not a hook: nothing is inserted into
+/// anyone's input path, and no message is intercepted or swallowed.
+pub fn mouse_button_down() -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_LBUTTON, VK_MBUTTON, VK_RBUTTON,
+    };
+
+    unsafe {
+        [VK_LBUTTON, VK_RBUTTON, VK_MBUTTON]
+            .iter()
+            .any(|k| (GetAsyncKeyState(k.0 as i32) as u16 & 0x8000) != 0)
     }
 }
