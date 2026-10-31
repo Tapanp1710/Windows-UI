@@ -199,6 +199,9 @@ fn main() {
             cmd_radios,
             cmd_set_radio,
             cmd_set_airplane,
+            cmd_wifi_list,
+            cmd_wifi_connect,
+            cmd_wifi_disconnect,
             cmd_brightness,
             cmd_set_brightness,
             cmd_open_project,
@@ -436,6 +439,24 @@ fn cmd_brightness() -> Option<u8> {
 #[tauri::command]
 fn cmd_set_brightness(level: u8) {
     win::brightness::set(level);
+}
+
+/// Every visible Wi-Fi network. Async: this calls into the WLAN service (D-033).
+#[tauri::command]
+async fn cmd_wifi_list() -> Vec<win::wifi::WifiNetwork> {
+    win::wifi::scan()
+}
+
+/// Join a saved network. Returns false for one we have no profile for - the panel
+/// then sends you to Windows' own flyout, which can ask for the password.
+#[tauri::command]
+async fn cmd_wifi_connect(ssid: String) -> bool {
+    win::wifi::connect(&ssid)
+}
+
+#[tauri::command]
+async fn cmd_wifi_disconnect() -> bool {
+    win::wifi::disconnect()
 }
 
 /// Airplane mode: every radio off, or back on.

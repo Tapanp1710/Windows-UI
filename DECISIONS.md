@@ -924,3 +924,41 @@ do in the macOS dock. The shape setting still applies to whatever the icon fills
 The shadows left behind on those plates were also still `rgba(60, 40, 25, …)` — warm
 brown, from the palette replaced in D-031. Every remaining one across the four
 stylesheets is now the blue of the current palette.
+
+---
+
+## D-047 — The Wi-Fi list, and the password prompt that isn't here
+**Date:** 2026-10-31 · **Phase:** quick settings
+
+The Wi-Fi tile's chevron now swaps the panel for the list of networks in range, the
+way the Windows flyout does, instead of throwing you into the Settings app.
+
+`WlanGetAvailableNetworkList` returns the **last scan Windows did**, not a fresh one.
+A fresh scan is `WlanScan` plus an async notification callback and takes seconds; the
+cached list is what the Windows flyout shows too, and Windows rescans on its own.
+That is why the list can take a moment to fill after Wi-Fi is switched on.
+
+**Joining is limited to networks with a saved profile**, and that limit is
+deliberate. `WlanConnect` by profile name carries no credentials through this process
+— the profile holds them. Joining a *new* network means composing a profile XML
+containing the passphrase, which means this app growing a password prompt and
+handling the secret. A network with no profile opens Windows' own flyout, which
+already does that properly and is the right place for it.
+
+Networks are folded by SSID — the API returns one entry per BSSID and security
+combination — keeping the strongest signal, and the joined one sorts first. SSIDs go
+in through `textContent`, never `innerHTML`: an SSID is attacker-chosen text that
+this machine has no say over.
+
+---
+
+## D-048 — `[hidden]` loses to any explicit `display`
+**Date:** 2026-10-31 · **Phase:** quick settings
+
+The Wi-Fi sub-view opened with the tiles still on top of it, and the network list
+squeezed to nothing. `hidden` is not magic: the UA stylesheet's
+`[hidden] { display: none }` is a normal rule, and `.tiles { display: grid }` has a
+higher specificity, so setting `.hidden = true` from script changed nothing visible.
+
+Worth writing down because it fails silently and looks like a logic bug: every
+element in this project that script hides now carries its own `[hidden]` rule.

@@ -161,9 +161,14 @@ function buildTiles(): void {
       go.innerHTML = ICON.chevron;
       go.setAttribute("aria-label", `${t.name} settings`);
       // Without this the click would also fire the tile underneath and flip the radio.
-      go.addEventListener("click", (e) => {
+      go.addEventListener("click", async (e) => {
         e.stopPropagation();
-        void openPage(t.page!);
+        if (t.id === "wifi") {
+          showWifi(true);
+          await renderWifi();
+          return;
+        }
+        await openPage(t.page!);
       });
       tile.appendChild(go);
     }
@@ -184,6 +189,89 @@ function paintTiles(): void {
     const icon = t.id === "wifi" && !on ? "wifiOff" : t.icon;
     el.querySelector(".tile-icon")!.innerHTML = ICON[icon];
   }
+}
+
+/* ------------------------------------------------------------ Wi-Fi list */
+
+interface WifiNetwork {
+  ssid: string;
+  signal: number;
+  secured: boolean;
+  connected: boolean;
+  known: boolean;
+}
+
+const LOCK = SVG(`<rect x="5" y="10.5" width="14" height="9" rx="2.2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>`);
+
+/** Signal drawn as the familiar three arcs, dimming the ones above the level. */
+function bars(signal: number): string {
+  const lit = signal >= 75 ? 3 : signal >= 45 ? 2 : signal >= 20 ? 1 : 0;
+  const arc = (d: string, n: number) =>
+    `<path d="${d}" opacity="${lit >= n ? 1 : 0.25}"/>`;
+  return SVG(
+    arc("M2.5 8.5a15 15 0 0 1 19 0", 3) +
+      arc("M5.5 12a10.5 10.5 0 0 1 13 0", 2) +
+      arc("M8.5 15.3a6 6 0 0 1 7 0", 1) +
+      `<circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/>`,
+  );
+}
+
+function showWifi(on: boolean): void {
+  $<HTMLElement>("wifi-sub").hidden = !on;
+  $<HTMLElement>("tiles").hidden = on;
+  // The sliders and battery belong to the tile view, not to a sub-page.
+  for (const id of ["sliders-wrap", "batt-row"]) {
+    const el = document.getElementById(id);
+    if (el) (el as HTMLElement).style.display = on ? "none" : "";
+  }
+}
+
+async function renderWifi(): Promise<void> {
+  const list = $("net-list");
+  list.textContent = "Scanning…";
+  const nets = await invoke<WifiNetwork[]>("cmd_wifi_list").catch(() => []);
+  list.textContent = "";
+
+  if (nets.length === 0) {
+    const note = $<HTMLElement>("wifi-note");
+    note.hidden = false;
+    note.textContent =
+      "No networks in range, or Wi-Fi is off. Windows rescans every few seconds — this list follows it.";
+    return;
+  }
+
+  for (const n of nets) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "net" + (n.connected ? " on" : "");
+    row.innerHTML = `
+      <span class="net-ico">${bars(n.signal)}</span>
+      <span class="net-name">
+        <b></b>
+        <span>${n.connected ? "Connected" : n.known ? "Saved" : "Open Windows list to join"}</span>
+      </span>
+      ${n.secured ? `<span class="net-lock">${LOCK}</span>` : ""}`;
+    // textContent, not innerHTML: an SSID is attacker-chosen text.
+    row.querySelector("b")!.textContent = n.ssid;
+
+    row.addEventListener("click", async () => {
+      if (n.connected) return;
+      if (n.known) {
+        await invoke("cmd_wifi_connect", { ssid: n.ssid });
+        window.setTimeout(() => void renderWifi(), 1200);
+        return;
+      }
+      // Joining a new network means asking for a passphrase. That is a credential
+      // prompt this app has no business growing, so Windows' own flyout does it.
+      await invoke("cmd_open_quick_settings");
+      await invoke("cmd_close_panel");
+    });
+    list.appendChild(row);
+  }
+
+  const note = $<HTMLElement>("wifi-note");
+  note.hidden = false;
+  note.textContent = "Saved networks join from here. A new one needs its password, which Windows asks for.";
 }
 
 async function openPage(page: string): Promise<void> {
@@ -433,6 +521,7 @@ async function main(): Promise<void> {
     });
   } else {
     $("quick").hidden = false;
+    $("wifi-back").addEventListener("click", () => showWifi(false));
     buildTiles();
     wireVolume();
     await Promise.all([refreshRadios(), refreshStatus(), wireBrightness()]);

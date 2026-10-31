@@ -13,6 +13,7 @@ pub mod media;
 pub mod pins;
 pub mod brightness;
 pub mod radios;
+pub mod wifi;
 pub mod status;
 pub mod sysinfo;
 pub mod taskbar;

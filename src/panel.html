@@ -39,7 +39,18 @@
            tile actually does stay in the same place. -->
       <div class="tiles" id="tiles"></div>
 
-      <div class="sliders">
+      <!-- The Wi-Fi chevron swaps the tiles for this, the way the Windows flyout
+           does, instead of throwing you out into the Settings app. -->
+      <section class="sub" id="wifi-sub" hidden>
+        <header class="sub-head">
+          <button class="sub-back" id="wifi-back" type="button" aria-label="Back">&#8249;</button>
+          <h2>Wi-Fi</h2>
+        </header>
+        <div class="net-list" id="net-list"></div>
+        <p class="sub-note" id="wifi-note" hidden></p>
+      </section>
+
+      <div class="sliders" id="sliders-wrap">
         <div class="slider-row" id="bright-row" hidden>
           <span class="mini static" id="bright-icon" aria-hidden="true"></span>
           <input type="range" id="bright" min="10" max="100" step="1" aria-label="Brightness" />

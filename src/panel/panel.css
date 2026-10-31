@@ -39,6 +39,12 @@ html[data-acrylic="on"] body {
 
 /* --- quick settings tiles ------------------------------------------------- */
 
+/* `[hidden]` is only `display: none` by default, and any explicit `display` here
+   beats it. Every element in this panel that gets hidden from script needs this. */
+.tiles[hidden] {
+  display: none;
+}
+
 .tiles {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -467,5 +473,145 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .shelf-empty[hidden] {
+  display: none;
+}
+
+/* --- a sub-view inside the quick panel ------------------------------------ */
+
+.sub {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+  animation: sub-in var(--t-fast) var(--ease-out) both;
+}
+
+@keyframes sub-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+}
+
+.sub[hidden] {
+  display: none;
+}
+
+.sub-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.sub-head h2 {
+  margin: 0;
+  font-size: var(--fs-label);
+  font-weight: 600;
+}
+
+.sub-back {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+  padding: 2px 8px 5px;
+  border-radius: 8px;
+  cursor: default;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.sub-back:hover {
+  background: var(--plate-bg);
+}
+
+.net-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--glass-edge) transparent;
+}
+
+.net {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.net:hover {
+  background: var(--plate-bg);
+}
+
+.net.on {
+  background: var(--accent-soft);
+}
+
+.net-ico {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.net-ico svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.net-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.net-name b {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.net-name span {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.net-lock {
+  flex: 0 0 auto;
+  opacity: 0.6;
+}
+
+.net-lock svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+}
+
+.sub-note {
+  margin: 10px 4px 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.sub-note[hidden] {
   display: none;
 }
