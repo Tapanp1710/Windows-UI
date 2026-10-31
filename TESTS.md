@@ -111,13 +111,43 @@ eye. Flagged in REPORT.md.
 ### Performance (20 s idle, pointer parked away from the dock)
 | # | Test | Result | Notes |
 |---|---|---|---|
-| 1.42 | Idle CPU near 0% | PASS | **0.01%** total across both processes (8 cores) |
-| 1.43 | RAM under 150 MB | PASS | **38.8 MB** total (main 32.4 + watchdog 6.5) |
+| 1.42 | Idle CPU near 0% | PASS | **0.09%** across all 9 processes (8 cores) |
+| 1.43 | RAM under 150 MB | **FAIL** | **202.6 MB private / 441.8 MB working set.** The first measurement here said 38.8 MB, which counted only our 2 host processes and omitted the 7 WebView2 processes doing the rendering. See REPORT.md 3.1 |
 
 ---
 
 ## PHASE 2 — Top bar
-N/A — not started. Will verify Win+A, Win+N, scroll-to-volume, tray overflow.
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 2.1 | Three glass pills, 6px from the top edge | PASS | focused app / clock / status |
+| 2.2 | Left pill shows the focused app's name and icon | PASS | excludes our own windows |
+| 2.3 | Centre pill shows day, date and time | PASS | |
+| 2.4 | Time and date follow the Windows format | PASS | via `Intl` with the system locale |
+| 2.5 | Clicking the clock opens the Windows calendar / notifications (Win+N) | PASS | confirmed by screenshot — the real panel |
+| 2.6 | Clicking Wi-Fi opens Windows Quick Settings (Win+A) | PASS | confirmed by screenshot |
+| 2.7 | Clicking Bluetooth opens Quick Settings | PASS | same handler |
+| 2.8 | Clicking volume opens Quick Settings | PASS | confirmed by screenshot |
+| 2.9 | Clicking battery opens Quick Settings | PASS | same handler |
+| 2.10 | Scrolling the volume icon changes volume | PASS | 2%/notch; 86% → 74% over 6 notches |
+| 2.11 | Scrolling elsewhere does NOT change volume | PASS | |
+| 2.12 | Battery shows level + charging state | PASS | 100%, charging/saver states handled |
+| 2.13 | Network shows connected / disconnected | PASS | signal strength + SSID not shown (known limitation) |
+| 2.14 | Live updates without heavy polling | PASS | 2 s interval; contributes to the 0.09% idle figure |
+| 2.15 | Clicks BETWEEN pills pass through to the app underneath | PASS | `WindowFromPoint` returns Code, not macui |
+| 2.16 | Clicks BELOW pills but inside the window rect pass through | PASS | same |
+| 2.17 | Clicks ON a pill hit the top bar | PASS | |
+| 2.18 | Visible bar reserves screen space | PASS | work area top = 63px (42 CSS × 1.5) |
+| 2.19 | Reservation released when the app dies | PASS | work area back to top = 0 |
+| 2.20 | Taskbar stays hidden while the bar is up | PASS | broke when using an appbar; fixed (D-010) |
+| 2.21 | Tray overflow chevron | PARTIAL | falls back to Quick Settings on Win11 (XAML host has no clickable child window) |
+| 2.22 | Auto-hide toggle for the top bar | NOT BUILT | setting exists (`topbarAutoHide`), no UI, untested |
+| 2.23 | Notification indicator dot | DEFERRED | renders, but nothing can feed it (same reason as D-006) |
+
+### Startup robustness
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 2.24 | Launch with the pointer already at the bottom edge | PASS | was broken: the reveal event fired before the webview attached its listener and the dock stayed concealed. Fixed by querying state on startup (D-011) |
 
 ## PHASE 3 — Launcher
 N/A — not started. Will verify Win, Esc, and that Win+E/R/D/L/I/A/N/V/Shift+S/arrows/
