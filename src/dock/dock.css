@@ -460,3 +460,12 @@
   background: var(--accent-soft);
   box-shadow: 0 0 0 2px var(--accent);
 }
+
+/* The pin. Pushed in means the dock stays; tilted means it auto-hides. */
+.tray-pin {
+  padding: 7px 8px;
+}
+
+.tray-pin.on .tray-ico {
+  color: var(--accent);
+}

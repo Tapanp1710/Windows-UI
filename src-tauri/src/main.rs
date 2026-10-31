@@ -350,7 +350,7 @@ struct BluetoothStatus {
 }
 
 #[tauri::command]
-fn cmd_status() -> StatusPayload {
+async fn cmd_status() -> StatusPayload {
     let (present, on) = win::bluetooth();
     StatusPayload {
         battery: win::status::battery(),
@@ -768,7 +768,7 @@ struct SystemPrefs {
 }
 
 #[tauri::command]
-fn cmd_system_prefs() -> SystemPrefs {
+async fn cmd_system_prefs() -> SystemPrefs {
     let s = settings::load();
     SystemPrefs {
         // Respect Windows' own animation setting as well as ours.
@@ -788,7 +788,7 @@ fn cmd_system_prefs() -> SystemPrefs {
 
 /// Everything the dock draws. Called on a timer by the frontend.
 #[tauri::command]
-fn cmd_dock_items() -> Vec<dock_model::DockItem> {
+async fn cmd_dock_items() -> Vec<dock_model::DockItem> {
     dock_model::build()
 }
 
@@ -865,7 +865,7 @@ fn cmd_dock_pin(name: String, parsing_name: String) {
 
 /// Titles for the grouped-window chooser.
 #[tauri::command]
-fn cmd_window_titles(hwnds: Vec<isize>) -> Vec<String> {
+async fn cmd_window_titles(hwnds: Vec<isize>) -> Vec<String> {
     let all = win::apps::list_windows();
     hwnds
         .into_iter()
@@ -1170,7 +1170,7 @@ fn cmd_widget_data() -> WidgetData {
  */
 
 #[tauri::command]
-fn cmd_shelf() -> Vec<settings::ShelfItem> {
+async fn cmd_shelf() -> Vec<settings::ShelfItem> {
     settings::load().shelf
 }
 

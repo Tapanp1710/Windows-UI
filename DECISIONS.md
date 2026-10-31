@@ -816,3 +816,48 @@ recorded, not faked.
 Layouts lost on the maximise button and a per-app allowlist for apps that draw their
 own caption. That is a real feature with a real cost, and it is the user's call rather
 than something to slip in.
+
+---
+
+## D-042 — The white ring was the acrylic drawing its own border
+**Date:** 2026-10-31 · **Phase:** polish
+
+Every panel had a bright white ring between the blur and the content. Measured off a
+screen capture rather than guessed at: reading inward across the panel edge gave warm
+brown (the acrylic tint), then **8px of pure rgb(255,255,255)**, then the DWM hairline,
+then the content.
+
+Two separate faults:
+
+- `AccentPolicy.accent_flags` was **2**, which asks the composition layer to draw its
+  own border around the acrylic. That border is a bright near-white line whatever the
+  tint is. It is now 0; the hairline we actually want comes from `DWMWA_BORDER_COLOR`,
+  which follows the theme.
+- `tint_for` and `border_for` were still the **warm palette** from before D-031. The
+  CSS was recoloured white-to-dark-blue and these two Rust constants were missed, so
+  every acrylic surface was tinted warm brown under a blue UI.
+
+The lesson is the one D-031 already paid for once: a colour that lives outside
+`theme.css` will be missed. These two are now the only ones, and they are named in
+the file as the exception.
+
+---
+
+## D-043 — A tokio worker must never be made STA
+**Date:** 2026-10-31 · **Phase:** polish
+
+Moving the polled commands off the main thread (the rule from D-033/D-040) meant
+`cmd_dock_items` became async, and its icon extraction needed a COM apartment on
+whatever pool thread it landed on. I initialised **`COINIT_APARTMENTTHREADED`**.
+
+An STA thread is required to pump messages. A tokio worker never pumps. So the first
+COM call afterwards that needed marshalling blocked forever — and because tokio reuses
+workers, the poisoned thread took down an unrelated command. The app hung the moment
+the launcher opened, `AppHangB1` at 22:36:44, and the watchdog restored the taskbar.
+
+**Decision:** `COINIT_MULTITHREADED` there. MTA has no pumping requirement, which is
+why every other background thread in this app already uses it.
+
+Worth stating as a rule, because it is the third shape of the same mistake: **work
+moved off the main thread has to be moved somewhere that can actually do it.** An
+async command is not automatically a safe place for COM.

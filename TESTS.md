@@ -505,3 +505,17 @@ All run against the release build on 2026-10-31, by driving a real mouse pointer
 | # | Test | Result | Notes |
 |---|---|---|---|
 | S.1 | `scripts\winkey-matrix.ps1` | **STILL NOT RUN** | started twice, stopped by the user both times because it takes the keyboard over for about a minute. It must be run when nobody is using the machine. Until then the Win-key claim rests on D-029's reasoning, not evidence |
+
+## Polish round — white ring, pin, and a hang I caused (2026-10-31, late)
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| P.1 | White ring reproduced and measured | PASS | pixel scan across the panel edge: 8px of pure rgb(255,255,255) between the acrylic and the DWM hairline |
+| P.2 | Root cause | FOUND | `accent_flags: 2` makes the composition layer draw its own near-white border, **and** `tint_for`/`border_for` were still the pre-D-031 warm palette (D-042) |
+| P.3 | Fixed | PASS | near-white pixels across three scan rows of an open launcher: **3**, down from a solid 8px band |
+| P.4 | Pin / unpin the dock | PASS | tray button; pinned shows an upright accent pin, unpinned a tilted grey one. Writes `dockAlwaysVisible`, which the Rust sampler reads straight back — no restart |
+| P.5 | Pin follows the settings window | PASS | `applyPrefs` repaints it, so changing it in settings updates the dock |
+| P.6 | Battery glyph no longer reads as a solid block | CHANGED | fill inset so the shell always reads as a shell. **Needs the user's eye** — "the icons are inverted" was not pinned down to a specific icon |
+| P.7 | Hang while opening the launcher | **CAUSED BY ME, then fixed** | making `cmd_dock_items` async needed COM on a pool thread and I used STA; a tokio worker never pumps, so the next marshalled COM call deadlocked. `AppHangB1` at 22:36:44 (D-043) |
+| P.8 | After the MTA fix | PASS | 100s soak with the launcher opened: responding throughout, **no hang events** |
+| P.9 | Memory | 247 MB idle / ~303 MB once the launcher has been opened | the launcher stays warm so it opens instantly; that is the cost |
