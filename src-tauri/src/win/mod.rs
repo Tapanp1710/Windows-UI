@@ -242,6 +242,19 @@ pub fn open_tray_overflow() -> bool {
 /// Is a Bluetooth radio present, and is it on?
 ///
 /// Uses the same radio enumeration the Settings app does. Cached presence, live state.
+/// Make sure this thread has a COM apartment, for the shell calls below.
+///
+/// The commands that reach the shell are async, so they run on a pool thread that
+/// may have none. It must be **multi-threaded**: an STA thread has to pump messages
+/// and a tokio worker never does, so marking one STA deadlocks the next marshalled
+/// call (D-043). `S_FALSE` and `RPC_E_CHANGED_MODE` both mean "already fine".
+pub fn ensure_com() {
+    use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+    }
+}
+
 pub fn bluetooth() -> (bool, bool) {
     // Presence and the real soft on/off state both come from the radio poller's
     // snapshot. This used to shell out to PowerShell from the main thread; see

@@ -624,3 +624,22 @@ working code on it.
 | G.2 | Weather and calendar switched off | PASS | live settings: `weather on=False`, `calendar on=False`; clock, media and stats still on |
 | G.3 | Switching off keeps position | PASS (by construction) | the whole map is written back with one flag flipped |
 | G.4 | App healthy after the change | PASS | responding, no hang events |
+
+## The main-thread audit (2026-11-01)
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| M.1 | Hang reproduced | PASS | `Responding=False`, `AppHangB1` at 01:03 while the widgets picker was being used |
+| M.2 | Whole command table audited, not just the symptom | DONE | **9** sync commands still reaching disk, shell or another process (D-054) |
+| M.3 | The one that bit | FOUND | `cmd_get_config` — the picker calls it on open and after every toggle, and it stats the Startup folder each time |
+| M.4 | All nine moved off the main thread | PASS | plus `win::ensure_com()` (MTA) at the two shell entry points |
+| M.5 | Soak, untouched | **PASS** | 75s, responding throughout, no hang events |
+| M.6 | Memory | PASS | **229.8–240.5 MB**, under the 250 MB target |
+
+## Widgets picker — what is and is not verified
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| G.5 | Toggling a widget takes effect | **PASS, the hard way** | blind coordinate probing hit the panel and switched clock and media off — which proves the control works, and was not something I meant to do. Restored |
+| G.6 | Switching off keeps position | PASS | positions unchanged through the accidental round trip |
+| G.7 | The panel's appearance | **NOT VERIFIED** | never captured on screen; aiming by coordinate kept missing and I stopped rather than keep taking the pointer. **Needs your eye** |

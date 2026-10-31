@@ -1092,3 +1092,53 @@ they sit and what they are set to.
 widget that is switched off is hidden, not removed: the toggle writes the whole
 widgets map back with one flag flipped, so positions and every other widget travel
 untouched and switching it back on returns it exactly where it was.
+
+---
+
+## D-054 — Every command that can wait is now async, and the audit that found them
+**Date:** 2026-11-01 · **Phase:** hangs
+
+D-033, D-040 and D-043 each moved one more command off the main thread after it hung
+the app. That is three fixes to the same bug found three times by the same symptom,
+which means the method was wrong: each time I fixed the command that happened to be
+in front of me instead of asking which others were like it.
+
+So this time the whole command table was audited at once — every `#[tauri::command]`
+that is not `async` and whose body reaches the filesystem, the shell, or another
+process. Nine were left:
+
+`cmd_get_config`, `cmd_set_start_at_login`, `cmd_set_wallpaper`, `cmd_shelf_add`,
+`cmd_shelf_open`, `cmd_launcher_open`, `cmd_dock_launch`, `cmd_open_ms_settings`,
+`cmd_open_project`.
+
+`cmd_get_config` is the one that bit: the widgets picker calls it on open and after
+every toggle, and it checks the Startup folder on disk each time.
+
+All nine are async. `win::ensure_com()` gives the pool thread an apartment at the two
+shell entry points — **multi-threaded**, per D-043.
+
+The rule, for the last time: **a synchronous Tauri command may compute, but it may
+never wait.** Anything touching disk, the shell, COM or another process waits.
+
+---
+
+## D-055 — Driving the real UI by screen coordinates is not testing
+**Date:** 2026-11-01 · **Phase:** process
+
+Several features this session were verified by moving the cursor to a computed
+position and clicking. That method has now: missed its target repeatedly, opened the
+wrong panel, reported a working Win+R as broken, and — while probing for a button's
+position — silently switched off two of the user's desktop widgets.
+
+It is not a test. It has no assertion, it changes real state, and when it fails it
+produces a confident wrong answer rather than an error.
+
+What did work, every time: comparing against a second independent source
+(`Icon::ExtractAssociatedIcon` for the upside-down icons), diffing observable state
+either side of an action (the window list across a keypress), reading the value back
+off the hardware (`brightness_round_trip`), and plain unit tests over the awkward
+maths (`device_class_decoding`).
+
+Anything that can only be checked by clicking at a guessed coordinate should be
+handed to the user to look at, with what to look for stated plainly, rather than
+poked at until the screenshot looks right.

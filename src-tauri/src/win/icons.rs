@@ -36,6 +36,7 @@ const ICON_PX: i32 = 256;
 /// Returns `None` rather than erroring: a missing icon should leave a blank plate,
 /// never take the dock down.
 pub fn icon_data_url(parsing_name: &str) -> Option<String> {
+    super::ensure_com();
     let rgba = icon_rgba(parsing_name)?;
     encode_data_url(&rgba)
 }

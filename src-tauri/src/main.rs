@@ -480,7 +480,7 @@ fn cmd_set_airplane(on: bool) {
 /// script, and handing arbitrary strings to ShellExecute from there would be a way
 /// to launch anything at all.
 #[tauri::command]
-fn cmd_open_ms_settings(page: String) -> bool {
+async fn cmd_open_ms_settings(page: String) -> bool {
     if !page.starts_with("ms-settings:") {
         logln!("refused a non-settings URI: {page}");
         return false;
@@ -493,7 +493,7 @@ fn cmd_open_ms_settings(page: String) -> bool {
 /// A fixed executable name, taking no argument from the page, so the `ms-settings:`
 /// allowlist above stays exactly as narrow as it is.
 #[tauri::command]
-fn cmd_open_project() -> bool {
+async fn cmd_open_project() -> bool {
     win::pins::launch("DisplaySwitch.exe")
 }
 
@@ -840,7 +840,7 @@ fn cmd_dock_activate(hwnd: isize) {
 
 /// Launch (or start a new instance of) whatever the button points at.
 #[tauri::command]
-fn cmd_dock_launch(parsing_name: String) -> bool {
+async fn cmd_dock_launch(parsing_name: String) -> bool {
     win::pins::launch(&parsing_name)
 }
 
@@ -1094,7 +1094,7 @@ struct ConfigPayload {
 }
 
 #[tauri::command]
-fn cmd_get_config() -> ConfigPayload {
+async fn cmd_get_config() -> ConfigPayload {
     logln!("settings window asked for the current configuration");
     let s = settings::load();
     ConfigPayload {
@@ -1150,7 +1150,7 @@ fn cmd_return_to_normal(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
-fn cmd_set_start_at_login(enabled: bool) -> Result<bool, String> {
+async fn cmd_set_start_at_login(enabled: bool) -> Result<bool, String> {
     startup::set(enabled).map_err(|e| e.to_string())?;
     // Report what is actually on disk now, not what was asked for.
     Ok(startup::is_enabled())
@@ -1158,7 +1158,7 @@ fn cmd_set_start_at_login(enabled: bool) -> Result<bool, String> {
 
 /// `which` is "light", "dark" or "restore".
 #[tauri::command]
-fn cmd_set_wallpaper(app: tauri::AppHandle, which: String) -> bool {
+async fn cmd_set_wallpaper(app: tauri::AppHandle, which: String) -> bool {
     wallpaper::set(&app, &which)
 }
 
@@ -1205,7 +1205,7 @@ async fn cmd_shelf() -> Vec<settings::ShelfItem> {
 
 /// Park paths on the shelf, skipping any that are already there.
 #[tauri::command]
-fn cmd_shelf_add(paths: Vec<String>) -> Vec<settings::ShelfItem> {
+async fn cmd_shelf_add(paths: Vec<String>) -> Vec<settings::ShelfItem> {
     let items: Vec<settings::ShelfItem> = paths
         .iter()
         .filter_map(|p| {
@@ -1244,7 +1244,7 @@ fn cmd_shelf_remove(id: String) -> Vec<settings::ShelfItem> {
 }
 
 #[tauri::command]
-fn cmd_shelf_open(id: String) -> bool {
+async fn cmd_shelf_open(id: String) -> bool {
     win::pins::launch(&id)
 }
 
@@ -1296,7 +1296,7 @@ async fn cmd_launcher_search(query: String) -> Vec<win::applist::FileEntry> {
 
 /// Open whatever was chosen, exactly as double-clicking it in Explorer would.
 #[tauri::command]
-fn cmd_launcher_open(app: tauri::AppHandle, target: String) -> bool {
+async fn cmd_launcher_open(app: tauri::AppHandle, target: String) -> bool {
     launcher::close(&app);
     win::pins::launch(&target)
 }

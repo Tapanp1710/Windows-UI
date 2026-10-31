@@ -86,6 +86,7 @@ pub fn pin_icon(pin: &Pin) -> Option<String> {
 /// shortcuts, working directories, arguments, UWP activation and per-file handlers
 /// all behave the way Windows intends.
 pub fn launch(parsing_name: &str) -> bool {
+    super::ensure_com();
     use windows::core::HSTRING;
     use windows::Win32::UI::Shell::ShellExecuteW;
     use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
