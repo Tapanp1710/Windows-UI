@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>macui switcher</title>
+    <script>
+      window.__diag = [];
+      function __report(kind, msg) {
+        window.__diag.push(kind + ": " + msg);
+        try {
+          window.__TAURI_INTERNALS__.invoke("cmd_log", { msg: "[switcher] " + kind + ": " + msg });
+        } catch (e) {}
+      }
+      addEventListener(
+        "error",
+        function (e) {
+          if (e.target && e.target !== window && e.target.tagName) {
+            __report("LOAD-FAIL", e.target.tagName + " " + (e.target.src || e.target.href));
+          } else {
+            __report("ERR", e.message + " @" + e.lineno);
+          }
+        },
+        true,
+      );
+      addEventListener("unhandledrejection", function (e) {
+        __report("REJECT", String(e.reason));
+      });
+    </script>
+    <link rel="stylesheet" href="./shared/theme.css" />
+    <link rel="stylesheet" href="./switcher/switcher.css" />
+  </head>
+  <body>
+    <!-- One centred glass bar. Each card leaves a hole where DWM draws that
+         window's live preview - anything painted there would be covered. -->
+    <div class="wrap">
+      <div class="bar glass" id="bar">
+        <div class="cards" id="cards"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+    </div>
+    <script type="module" src="./switcher/switcher.ts"></script>
+  </body>
+</html>

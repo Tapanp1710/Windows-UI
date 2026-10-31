@@ -33,6 +33,7 @@ interface Settings {
   topbarAutoHide: boolean;
   topbarAppPill: boolean;
   island: boolean;
+  switcherEnabled: boolean;
   dockAlwaysVisible: boolean;
   dockIconSize: number;
   dockMagnification: boolean;
@@ -284,6 +285,7 @@ async function main(): Promise<void> {
   toggle("topbarAutoHide", "topbarAutoHide");
   toggle("topbarAppPill", "topbarAppPill");
   toggle("island", "island");
+  toggle("switcherEnabled", "switcherEnabled");
 
   slider("dockIconSize", "dockIconSize", (n) => `${n} px`);
   slider("animationSpeed", "animationSpeed", (n) => (n === 0 ? "off" : `${n}×`));

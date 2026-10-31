@@ -79,8 +79,38 @@ unsafe fn is_taskbar_window(hwnd: HWND) -> bool {
         return false;
     }
 
+    // Cloaked windows are the shell's own hidden surfaces: "Windows Input
+    // Experience", UWP apps that are suspended, windows on another virtual desktop.
+    // DWM knows they are not on screen even though Windows says they are visible,
+    // and this is the same test the real Alt+Tab uses to leave them out.
+    if is_cloaked(hwnd) {
+        return false;
+    }
+
+    // Our own panels are chrome, not applications. They have no taskbar button, but
+    // Tauri removes that through ITaskbarList rather than WS_EX_TOOLWINDOW, so the
+    // style tests above let them through.
+    if is_our_window(hwnd.0 as isize) {
+        return false;
+    }
+
     // A title-less window is almost always a helper surface.
     GetWindowTextLengthW(hwnd) > 0
+}
+
+/// Whether DWM considers a window cloaked - present, but not shown to the user.
+unsafe fn is_cloaked(hwnd: HWND) -> bool {
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+
+    let mut cloaked: u32 = 0;
+    DwmGetWindowAttribute(
+        hwnd,
+        DWMWA_CLOAKED,
+        &mut cloaked as *mut _ as *mut std::ffi::c_void,
+        std::mem::size_of::<u32>() as u32,
+    )
+    .is_ok()
+        && cloaked != 0
 }
 
 unsafe fn window_title(hwnd: HWND) -> String {

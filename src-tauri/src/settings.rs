@@ -28,6 +28,9 @@ pub struct Settings {
     /// what is playing, and by itself for a moment when the volume changes, the
     /// charger goes in or out, or the track changes.
     pub island: bool,
+    /// Our Alt+Tab. Off hands the keystroke straight back to Windows: the hook stops
+    /// swallowing Tab, so the native switcher appears exactly as it always did.
+    pub switcher_enabled: bool,
     pub dock_always_visible: bool,
     pub dock_icon_size: u32,
     pub dock_magnification: bool,
@@ -93,6 +96,7 @@ impl Default for Settings {
             topbar_auto_hide: true,
             topbar_app_pill: false,
             island: true,
+            switcher_enabled: true,
             dock_always_visible: false,
             dock_icon_size: 44,
             dock_magnification: true,

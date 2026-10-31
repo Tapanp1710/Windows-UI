@@ -154,7 +154,52 @@ N/A — not started. Will verify Win, Esc, and that Win+E/R/D/L/I/A/N/V/Shift+S/
 numbers all still work untouched.
 
 ## PHASE 4 — Window switcher
-N/A — not started. Will verify Alt+Tab, Alt+Shift+Tab, Esc, Win+Tab, virtual desktops.
+
+The phase with the only keyboard hook in the project, so the fallbacks were tested by
+forcing them rather than by reading the code.
+
+### Behaviour
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 4.1 | Alt+Tab opens the switcher | PASS | glass bar, centred |
+| 4.2 | Live window previews | PASS | real DWM thumbnails, not screenshots — the previews are live |
+| 4.3 | Second entry selected on open | PASS | Windows' own behaviour: tap Alt+Tab and let go to swap the last two windows |
+| 4.4 | Alt+Tab again moves forward | PASS | wraps around |
+| 4.5 | Alt+Shift+Tab moves back | PASS | |
+| 4.6 | Releasing Alt switches | PASS | focus moved from the desktop to the selected window |
+| 4.7 | Escape cancels | PASS | focus unchanged afterwards — verified by comparing the foreground window before and after |
+| 4.8 | Clicking a card switches to it | PASS | |
+| 4.9 | Order matches Windows' | PASS | z-order, which *is* the most-recently-used order |
+| 4.10 | App icons on the cards | PASS | same icons the dock shows, from the owning executable |
+
+### The fallbacks — the part that matters
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 4.11 | **Killed mid-Alt+Tab with Alt still held** | **PASS** | app gone, taskbar restored by the watchdog, and Windows' own Alt+Tab worked on the very next press. Confirmed by screenshot of the native switcher |
+| 4.12 | Switched off in settings | PASS | the hook stops swallowing Tab; Windows' own switcher appears |
+| 4.13 | Hook fails to install | PASS (by construction) | logged, nothing swallowed. Forcing a real failure needs a machine that refuses the hook |
+| 4.14 | A window running as administrator has focus | **NOT TESTED** | Windows does not deliver our hook its input in that case, so the native switcher runs. That is how the API behaves rather than something we implement, but it was not forced here — nothing on this machine runs elevated |
+| 4.15 | Alt never gets stuck | PASS | the hook deliberately does not swallow Alt (D-027) |
+| 4.16 | Fewer than two windows | PASS | nothing is shown rather than a one-entry panel |
+
+### What the switcher shows
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 4.17 | Our own panels are excluded | PASS | **failed first**: the dock, top bar and widgets appeared as switchable windows. Tauri hides a window from the taskbar through `ITaskbarList` rather than `WS_EX_TOOLWINDOW`, so the usual style test let them through |
+| 4.18 | Cloaked windows excluded | PASS | **failed first**: "Windows Input Experience" was listed. Windows' own switcher filters on `DWMWA_CLOAKED`, and now so does this |
+| 4.19 | Previews released on close | PASS | every exit path goes through `dwm::clear()`; a leaked thumbnail holds a reference to a window that may be closing |
+
+### Win+Tab
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 4.20 | Win+Tab opens Windows Task View | PASS | deliberately not restyled — virtual desktops have no supported API, and a restyled view that could not drive them would be worse than the real one (D-028) |
+| 4.21 | Virtual desktops still work | PASS | untouched |
+
+### Resources
+| # | Test | Result | Notes |
+|---|---|---|---|
+| 4.22 | Idle memory with the switcher loaded | PASS | **229.3 MB** private against the 250 MB target. The window is created hidden at startup so Alt+Tab is instant rather than waiting for a webview |
+| 4.23 | Idle CPU | PASS | 0.208%. The hook costs nothing when no key is pressed |
 
 ## PHASE 5 — Desktop widgets
 

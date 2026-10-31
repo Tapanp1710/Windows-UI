@@ -3,9 +3,9 @@
 **Read this file first when resuming.**
 
 ## Current phase
-STEP 0, PHASE 1 (Dock), PHASE 2 (Top bar), PHASE 6 (Settings / startup / packaging)
-and PHASE 5 (Desktop widgets) are complete and verified. PHASE 4 (window switcher)
-then PHASE 3 (launcher) are next, in that order.
+STEP 0, PHASE 1 (Dock), PHASE 2 (Top bar), PHASE 6 (Settings / startup / packaging),
+PHASE 5 (Desktop widgets) and PHASE 4 (Window switcher) are complete and verified.
+**PHASE 3 (Launcher) is the only one left.**
 
 ## Status summary
 
@@ -16,7 +16,7 @@ then PHASE 3 (launcher) are next, in that order.
 | PHASE 2 — Top bar | **Done**, verified |
 | PHASE 6 — Settings / startup / packaging | **DONE**, verified |
 | PHASE 5 — Desktop widgets | **DONE**, verified |
-| PHASE 4 — Window switcher | **Not started** — next |
+| PHASE 4 — Window switcher | **DONE**, verified |
 | PHASE 3 — Launcher | **Not started** — last, by design (riskiest) |
 
 ---
@@ -102,6 +102,19 @@ a recorded baseline instead of forcing "always visible".
 - The window spans the screen but its **clickable area is only the pills** (and the
   island's body while it is open), so clicks between them reach the app underneath.
 
+### Window switcher (PHASE 4)
+- **Alt+Tab** opens a centred glass bar with **live DWM previews** of every window —
+  the real thing, updating, not screenshots.
+- Alt+Tab forward, Alt+Shift+Tab back, both wrapping; releasing Alt switches; Escape
+  cancels and leaves focus exactly where it was. The list is in Windows' own
+  most-recently-used order and opens on the second entry, so a tap swaps the last two
+  windows just as it always did.
+- **Every way it can fail hands Alt+Tab back to Windows** — including being killed
+  mid-switch with Alt held down, which was tested by doing it (D-027).
+- **Win+Tab is deliberately untouched.** Virtual desktops have no supported API
+  (D-028).
+- One switch in settings returns Alt+Tab to Windows entirely.
+
 ### Desktop widgets (PHASE 5)
 - Five glass widgets on the desktop: **clock**, **calendar** (today highlighted),
   **weather**, **music controls** and **system stats** (CPU, RAM, battery).
@@ -154,9 +167,9 @@ a recorded baseline instead of forcing "always visible".
   taskbar returns, the user's original auto-hide setting is preserved, no orphans).
 - `restore-windows.ps1` recovers the taskbar even when the whole process tree is killed.
 
-### Performance (30 s idle, dock + top bar + island + widgets, panels closed)
-- **Idle CPU: 0.28%** across 8 processes — target near-0%. **Met.**
-- **RAM: 213.2 MB private.** Target under 250 MB. **Met.**
+### Performance (30 s idle, everything loaded, panels closed)
+- **Idle CPU: 0.21%** across 8 processes — target near-0%. **Met.**
+- **RAM: 229.3 MB private.** Target under 250 MB. **Met.**
 
 Working set overstates it badly, because Chromium's shared binaries are counted once
 per process; private bytes is the fair number.
@@ -267,7 +280,11 @@ These cost real time and are worth not rediscovering:
 ---
 
 ## Next step
-**PHASE 4 — window switcher (Alt+Tab).** Then PHASE 3 (launcher).
+**PHASE 3 — the launcher.** The riskiest phase by design, and the reason it is last:
+the Win key has to open the launcher without breaking Win+E, Win+R, Win+D, Win+L,
+Win+I, Win+A, Win+N, Win+V, Win+Shift+S, Win+arrows or Win+number. Every one of those
+gets tested individually and recorded in TESTS.md, and if any of them breaks, Start
+stays on the Win key and it gets logged — which the brief explicitly allows.
 
 For PHASE 4 and PHASE 3, the keyboard-hook rules agreed for this run:
 - If the hook fails, is not installed, or an elevated window has focus, Windows' own

@@ -55,6 +55,28 @@
         "closable": false,
         "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --process-per-site --renderer-process-limit=1",
         "focusable": false
+      },
+      {
+        "label": "switcher",
+        "url": "switcher.html",
+        "title": "macui switcher",
+        "width": 1280,
+        "height": 720,
+        "x": 0,
+        "y": 0,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "focus": false,
+        "focusable": false,
+        "visible": false,
+        "maximizable": false,
+        "minimizable": false,
+        "closable": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --process-per-site --renderer-process-limit=1"
       }
     ]
   },

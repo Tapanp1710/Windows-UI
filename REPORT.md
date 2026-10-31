@@ -118,6 +118,19 @@ What makes them behave like desktop widgets rather than a floating panel:
   art, title, transport — and expands on its own for a few seconds when the volume
   changes, the charger goes in or out, or the track changes.
 
+### PHASE 4 — Window switcher
+- **Alt+Tab** opens a centred glass bar with **live previews** of your windows. They
+  are real DWM thumbnails — the actual window contents, updating, not screenshots.
+- Everything behaves as it always did: Alt+Tab forward, Alt+Shift+Tab back, release
+  Alt to switch, Escape to cancel and stay where you were. It opens on the second
+  entry, so a quick tap still swaps the last two windows.
+- **It hands Alt+Tab back to Windows in every failure I could force**, including
+  being killed in the middle of a switch with Alt still held down. I tested that one
+  by doing it: Windows' own switcher worked on the very next press.
+- **Win+Tab is untouched** — Windows Task View, exactly as before, because virtual
+  desktops have no supported API and a half-working replacement would be worse than
+  the real thing.
+
 ### Safety — the part that matters most
 - The taskbar is restored on a clean exit.
 - A **watchdog process** restores it if the app is hard-killed. Verified repeatedly:
@@ -291,8 +304,8 @@ Measured over 30 s: dock, top bar, island and all five widgets running, panels c
 
 | Metric | Value | Target | Verdict |
 |---|---|---|---|
-| Idle CPU | **0.28%** across 8 processes (8 cores) | near-0% | **met** |
-| Private bytes | **213.2 MB** | under 250 MB | **met** |
+| Idle CPU | **0.21%** across 8 processes (8 cores) | near-0% | **met** |
+| Private bytes | **229.3 MB** | under 250 MB | **met** |
 | Processes | 8 (2 ours + 6 WebView2) | — | was 10 before the panels shared a renderer |
 | Without the widgets | ~200 MB | — | the master switch destroys the layer |
 | Before sharing a renderer | 258.3 MB | — | over target; see D-020 |
@@ -308,16 +321,15 @@ second, and the top bar every two seconds. No hooks are installed anywhere in th
 
 ## 7. What is next
 
-The agreed build order from here is **PHASE 4 (window switcher) → PHASE 3 (launcher)**,
-which is what I will work through. The launcher is last by design:
-capturing the Win key without breaking Win+E, Win+R, Win+L and the rest is the riskiest
-thing in the brief, and PHASE 4 builds the DWM thumbnail code that both it and the
-dock's window chooser want.
+**PHASE 3, the launcher, is the only phase left.** It is last by design:
+capturing the Win key without breaking Win+E, Win+R, Win+L and the rest is the
+riskiest thing in the brief.
 
-For both keyboard phases, the rules are: if the hook fails, is not installed, or an
-elevated window has focus, **Windows' own behaviour must work** — tested explicitly,
-including killing the app mid-Alt+Tab with Alt still held down. If any Win-key
-combination breaks, Start stays on the Win key and it gets logged.
+The rule it will be held to is the one PHASE 4 was: if the hook fails, is not
+installed, or a window running as administrator has focus, **Windows' own behaviour
+must work**. Every Win-key combination gets tested individually and recorded. If any
+of them breaks, Start stays on the Win key and it gets logged — which the brief
+explicitly allows.
 
 Beyond the remaining phases:
 

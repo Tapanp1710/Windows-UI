@@ -449,3 +449,58 @@ Two implementation notes worth keeping:
 Not built from Alcove: the file shelf (drag files onto the island to park them),
 clipboard history, camera mirror and timers. They are separate features rather than
 variations on this one.
+
+---
+
+## D-027 — One keyboard hook, and the rules it lives by
+**Date:** 2026-10-31 · **Phase:** 4
+
+Everything else in this project deliberately avoids hooks: the dock samples the
+cursor rather than installing `WH_MOUSE_LL`, because a slow hook degrades input for
+the whole machine. Alt+Tab leaves no choice — the shell reserves it, and
+`WH_KEYBOARD_LL` is the only way to see it.
+
+**Decision:** install exactly one low-level keyboard hook, on **a thread of its own
+with its own message loop**, and keep the callback down to reading two key states and
+pushing an enum into a channel. It never touches a window, never allocates and never
+blocks. A dedicated thread matters: a low-level hook is delivered to the thread that
+installed it, and Windows drops a hook whose thread does not answer in time — putting
+it on the UI thread would mean a busy webview could lose it.
+
+**What it swallows, and nothing else:** `Tab` while Alt is physically held, and `Esc`
+while the switcher is open. It does **not** swallow Alt itself, so the window you are
+leaving sees a complete Alt press rather than half of one and cannot be left with a
+stuck modifier. The cost is that an app with a menu bar may flash it as you switch
+away; a stuck Alt would be far worse.
+
+**Every failure leaves Windows' Alt+Tab working**, which is the rule that mattered
+most:
+
+| Failure | What happens |
+|---|---|
+| `SetWindowsHookEx` fails | logged; nothing is installed and nothing is swallowed |
+| A window running as administrator has focus | Windows does not deliver our hook its input at all, so the native switcher runs. Automatic, not something we detect |
+| The callback is too slow | Windows silently drops the hook — which restores the native switcher |
+| The process dies, however it dies | the hook dies with it |
+| The user switches it off in settings | the hook passes everything through |
+
+All but the elevated-window case were tested by forcing them, including killing the
+app mid-Alt+Tab **with Alt still held down**: Windows' own switcher worked on the
+very next press.
+
+---
+
+## D-028 — Win+Tab is left as Windows Task View
+**Date:** 2026-10-31 · **Phase:** 4
+
+The brief asks for a restyled Win+Tab, and allows keeping the Windows one if
+restyling would break virtual desktops.
+
+**Decision:** keep Task View. Virtual desktops have no supported API for creating,
+switching or moving windows between desktops — the interfaces exist but are
+undocumented and change between Windows builds. A restyled Win+Tab that could show
+the desktops but not drive them would be a worse Task View, and one that drove them
+through undocumented interfaces would break on a Windows update, in a part of the
+system the user cannot easily recover.
+
+Alt+Tab is restyled; Win+Tab opens Windows' own, exactly as before.

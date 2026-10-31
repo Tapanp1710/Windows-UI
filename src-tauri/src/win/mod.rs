@@ -2,6 +2,8 @@
 //! of the app stays platform-agnostic and easy to read.
 
 pub mod acrylic;
+pub mod dwm;
+pub mod hotkeys;
 pub mod appbar;
 pub mod apps;
 pub mod icons;
