@@ -589,3 +589,105 @@ font, over a glass panel. That was the "weird white colour marking" on the top b
 **Decision:** every `title` became an `aria-label`. The information still reaches a
 screen reader; nothing is drawn. The dock, which genuinely needs tooltips, has always
 drawn its own.
+
+---
+
+## D-033 — Nothing that waits may run on the main thread
+**Date:** 2026-10-31 · **Phase:** crash fix
+
+The app was being closed by Windows with `AppHangB1` - "macui.exe stopped interacting
+with Windows and was closed" - three times in under an hour. Not a crash: a **hang**.
+The Application event log says so plainly, and the distinction is the whole diagnosis.
+Windows marks a process as not responding after five seconds without pumping messages,
+and the shell then offers to close it.
+
+Two things were sitting on the main thread waiting:
+
+1. **`win::bluetooth()` started PowerShell** - `Get-PnpDevice -Class Bluetooth` -
+   behind a `OnceLock`, and the top bar calls `cmd_status` every two seconds. A cold
+   PowerShell start on a machine with 0.4 GB of free RAM and a page file under
+   pressure is not milliseconds, it is seconds, and they were spent not pumping.
+2. **`cmd_radios` and `cmd_set_radio` were synchronous commands**, and
+   `radios::mta()` spawned a thread and then **joined** it. A join does not pump
+   messages. `SetStateAsync` on a Bluetooth radio routinely takes seconds, and the
+   quick panel polled `cmd_radios` while it was open.
+
+A synchronous Tauri command runs on the main thread, inside the WebView2 IPC
+callback. That is the same fact D-012 turned on, and it is worth stating as a rule:
+**a synchronous command may compute, but it may never wait.**
+
+**Decision:** radios moved to the background-poller shape `media.rs` already uses - one
+MTA thread owning every WinRT call, a snapshot the UI reads, and a queue it writes to.
+`list()` is now a memory read and `set()` returns immediately. The PowerShell probe is
+gone entirely: the radio snapshot already carries Bluetooth presence *and* its real
+on/off state, which the shell-out could only guess at by reporting presence twice.
+
+The launcher's `cmd_launcher_apps`, `cmd_launcher_search` and `cmd_launcher_list_dir`
+became `async` for the same reason. They are bounded - a 350ms budget on the file walk
+- but bounded is not the same as free, and an async command runs off the main thread.
+
+---
+
+## D-034 — A collapsed island is its pill, not its container
+**Date:** 2026-10-31 · **Phase:** crash fix
+
+The top bar window is transparent and clipped to a hit-test region covering only the
+pills, so everything outside them is bare screen. The region was measured from
+`#island`, the flex container - but `.island-body` inside it keeps its full **330px
+width** while collapsed to zero height. So a 100px pill produced a 366px region, and
+the window's acrylic showed through the empty 266px as a pale slab across the middle
+of the bar.
+
+That was the "white marking at the top" - the second half of it. The first half was
+native tooltips (D-032); this was the rest.
+
+**Decision:** measure `#clock-pill` while the island is collapsed and `#island` only
+while it is open. One element swap, and the region now hugs what is actually drawn.
+
+---
+
+## D-035 — WMI brightness, and the two types it insists on
+**Date:** 2026-10-31 · **Phase:** quick settings
+
+A laptop's backlight has no Win32 call. `SetMonitorBrightness` speaks DDC/CI, which
+external monitors answer and built-in panels do not; the panel's backlight lives in
+`root\wmi` as `WmiMonitorBrightness` to read and `WmiMonitorBrightnessMethods::
+WmiSetBrightness` to write. That is the pair the Windows slider itself drives, so
+moving ours moves Windows'.
+
+Two things this cost, both found by the test rather than by reading:
+
+- `WmiSetBrightness` declares `uint32 Timeout` and `uint8 Brightness`, and rejects the
+  matching `VT_UI4`/`VT_UI1` VARIANTs with `WBEM_E_TYPE_MISMATCH` (0x80041005). Both
+  have to go in as **`VT_I4`**.
+- `ExecMethod` returns `Ok` on a parameter object built wrong. Success is not evidence
+  here. `brightness_round_trip` sets the panel to a different level, reads it back off
+  the hardware, and restores it - which is the only check that means anything, and it
+  is what caught the type mismatch.
+
+It runs on its own thread, idle except for writes and a 30-second re-read, for the
+reason in D-033. Machines with no dimmable panel report `None` and the panel leaves
+the slider out rather than showing one that moves nothing.
+
+---
+
+## D-036 — Toggle what Windows lets us toggle; open the rest
+**Date:** 2026-10-31 · **Phase:** quick settings
+
+The brief is "every setting the Windows taskbar offers". Windows offers eleven tiles
+and two sliders, and has a public API for five of them.
+
+**Decision:** three kinds of tile, and the difference is visible rather than hidden.
+Wi-Fi, Bluetooth and Airplane mode drive the real radios. Volume drives the real
+endpoint and brightness the real backlight. Battery saver, Night light, Accessibility,
+Nearby sharing, Cast, VPN and Mobile hotspot have **no supported way** to toggle from
+another process, so their tiles open the real Windows control in one click; Project
+runs `DisplaySwitch.exe`, which is what Win+P does.
+
+The alternative for those seven is driving undocumented registry state behind
+Windows' back - Night light is the usual example - and that is exactly what the brief
+rules out. A tile that takes you to the real switch is honest. A tile that silently
+does nothing, or that fights the OS over who owns a setting, is not.
+
+All eleven are shown at once rather than paged behind a chevron: a control hidden
+behind a gesture you have to discover first is not "available at the top".

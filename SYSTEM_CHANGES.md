@@ -115,3 +115,22 @@ run the installer at all — the `.exe` in `src-tauri/target/release` runs as it
 - `%APPDATA%\macui\macui-warm-*.png` — only if you accepted one of the bundled
   wallpapers (U-5).
 - `%LOCALAPPDATA%\macui\macui.log` — runtime log, truncated at 1 MB.
+
+## 5. System state the quick-settings panel can change
+
+These are things you change **by using the panel**, exactly as you would from the
+Windows taskbar. Nothing here happens on its own, nothing persists in a form the app
+owns, and `restore-windows.ps1` does not need to undo any of it — the Windows control
+for each one is the undo.
+
+| What | How | Undo |
+|---|---|---|
+| Wi-Fi radio on/off | `Windows.Devices.Radios`, the same call the Windows Wi-Fi tile makes | the Wi-Fi tile, in our panel or Windows' |
+| Bluetooth radio on/off | same | same |
+| Airplane mode tile | turns every toggleable radio off (or back on) | the tile again, or Windows' own switch |
+| Screen brightness | `WmiMonitorBrightnessMethods::WmiSetBrightness`, the same method Windows' brightness slider drives | any brightness control; Windows' slider reads the same value |
+| Output volume | the default audio endpoint, unchanged from before | the volume slider |
+
+The panel's other tiles — Battery saver, Night light, Accessibility, Nearby sharing,
+Cast, VPN, Mobile hotspot, Project — **change nothing themselves**. They open the real
+Windows page or flyout for that setting (see D-036).

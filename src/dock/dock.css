@@ -166,7 +166,7 @@
 .item.attention .plate {
   box-shadow:
     0 0 0 2px var(--accent),
-    0 0 14px 2px rgba(232, 130, 62, 0.55);
+    0 0 14px 2px var(--accent-soft);
 }
 
 .item.attention {
@@ -263,7 +263,7 @@
 /* --- Start button --------------------------------------------------------- */
 
 .item.start .plate {
-  background: linear-gradient(145deg, #ffc06e 0%, #e8823e 100%);
+  background: linear-gradient(145deg, #6aa8ff 0%, #2563c7 100%);
   border-color: rgba(255, 255, 255, 0.55);
 }
 
@@ -316,7 +316,7 @@
 }
 
 .menu-item:hover:not(:disabled) {
-  background: rgba(232, 130, 62, 0.18);
+  background: var(--accent-wash);
 }
 
 .menu-item:disabled {

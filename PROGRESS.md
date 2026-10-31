@@ -342,3 +342,24 @@ Settings: right-click the dock background, or any top-bar pill.
 Installer: `src-tauri/target/release/bundle/nsis/macui_0.1.0_x64-setup.exe` (per-user,
 no UAC).
 Log: `%LOCALAPPDATA%\macui\macui.log`. Settings: `%APPDATA%\macui\settings.json`.
+
+## 2026-10-31 — crash fix, full quick settings, blue palette, Start restyle
+
+- **The hangs are fixed.** They were `AppHangB1`, not crashes: two things waited on the
+  main thread, both in the Wi-Fi/Bluetooth path — a PowerShell call behind the Bluetooth
+  status read, and the radio toggles themselves. Both moved to a background poller
+  (D-033). Low RAM was real (0.38 GB free of 7.90) but it was the aggravator, not the
+  fault.
+- **Every Windows taskbar control is now at the top**: eleven tiles and two sliders.
+  Wi-Fi, Bluetooth, Airplane, brightness and volume drive the real thing; the seven with
+  no public API open the real Windows page instead of pretending (D-036).
+- **Brightness is real**, through WMI, and the round-trip test caught a type mismatch
+  that `ExecMethod` had reported as success (D-035).
+- **Palette is white to dark blue**, with every colour now living only in `theme.css`.
+- **The white marking at the top is gone** — the collapsed island's hit region was
+  measured from its container, which is 330px wide even when empty (D-034).
+- **The launcher looks like a Start menu**: pill search, sidebar icons, account row and
+  a power menu.
+- Memory **236.6 MB** settled, under the 250 MB target.
+- I corrupted `settings.json` mid-session writing it from PowerShell (UTF-8 BOM) and
+  lost the shelf and widget positions; both restored from the session's earlier values.

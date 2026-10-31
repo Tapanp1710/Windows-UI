@@ -43,9 +43,13 @@ html[data-acrylic="on"] body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+  /* All eleven are shown at once. Windows pages them behind a chevron, which hides
+     half the controls behind a gesture you have to find first; the panel is simply
+     tall enough instead. */
 }
 
 .tile {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -63,11 +67,51 @@ html[data-acrylic="on"] body {
     border-color var(--t-fast) var(--ease-out);
 }
 
+/* A toggle tile keeps its right edge clear for the chevron. */
+.tile.toggle {
+  padding-right: 28px;
+}
+
 /* The "on" state is the accent fill, the way a Windows quick-settings tile reads. */
-.tile[aria-pressed="true"] {
+.tile.on {
   background: var(--accent);
   border-color: transparent;
-  color: #fff;
+  color: var(--accent-text);
+}
+
+/* "Take me to the full list" - the same split Windows' own Wi-Fi tile has. */
+.tile-go {
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  cursor: default;
+  transition:
+    opacity var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+.tile-go svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+}
+
+.tile-go:hover {
+  opacity: 1;
+  background: var(--accent-wash);
+}
+
+.tile.on .tile-go:hover {
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .tile:hover:not([disabled]) {
@@ -113,7 +157,24 @@ html[data-acrylic="on"] body {
   text-overflow: ellipsis;
 }
 
-/* --- volume --------------------------------------------------------------- */
+/* --- brightness and volume ------------------------------------------------ */
+
+.sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.slider-row[hidden] {
+  display: none;
+}
+
+/* The brightness icon is a label, not a button: there is nothing to mute. */
+.mini.static {
+  pointer-events: none;
+  opacity: 0.75;
+}
 
 .slider-row {
   display: flex;

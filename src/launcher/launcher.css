@@ -35,19 +35,44 @@ html[data-acrylic="on"] body {
 /* --- search --------------------------------------------------------------- */
 
 .head {
-  padding: 16px 18px 10px;
+  padding: 18px 20px 12px;
+}
+
+/* The search field is the first thing the Win key lands on, so it reads as the
+   point of the window rather than a box above a grid. */
+.search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 13px;
+  display: flex;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+
+.search-icon svg {
+  width: 17px;
+  height: 17px;
+  display: block;
 }
 
 .search {
   width: 100%;
   appearance: none;
   border: 1px solid var(--plate-border);
-  border-radius: 11px;
+  border-radius: 999px;
   background: var(--plate-bg);
   color: var(--text);
   font: inherit;
   font-size: 15px;
-  padding: 9px 13px;
+  padding: 11px 15px 11px 38px;
+  transition:
+    border-color var(--t-fast) var(--ease-out),
+    box-shadow var(--t-fast) var(--ease-out);
 }
 
 .search::placeholder {
@@ -57,6 +82,7 @@ html[data-acrylic="on"] body {
 .search:focus {
   outline: none;
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
 }
 
 /* --- layout --------------------------------------------------------------- */
@@ -88,8 +114,11 @@ html[data-acrylic="on"] body {
   font: inherit;
   font-size: var(--fs-label);
   text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 9px;
   padding: 7px 10px;
-  border-radius: 8px;
+  border-radius: 9px;
   cursor: default;
   white-space: nowrap;
   overflow: hidden;
@@ -102,8 +131,24 @@ html[data-acrylic="on"] body {
 }
 
 .side button.on {
-  background: rgba(232, 130, 62, 0.20);
+  background: var(--accent-soft);
   font-weight: 600;
+}
+
+.side-icon {
+  flex: 0 0 auto;
+  display: flex;
+  color: var(--text-dim);
+}
+
+.side-icon svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.side button.on .side-icon {
+  color: var(--accent);
 }
 
 .side .side-head {
@@ -136,8 +181,8 @@ html[data-acrylic="on"] body {
   min-height: 0;
   overflow-y: auto;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-  gap: 4px;
+  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  gap: 5px;
   align-content: start;
   padding-right: 4px;
   scrollbar-width: thin;
@@ -164,15 +209,15 @@ html[data-acrylic="on"] body {
 }
 
 .item.on {
-  background: rgba(232, 130, 62, 0.22);
+  background: var(--accent-soft);
   transform: translateY(-1px);
 }
 
 /* The same soft plate and shape the dock puts every icon on, so an app looks like
    itself wherever it appears. */
 .plate {
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -191,8 +236,8 @@ html[data-icon-shape="rounded"] .plate {
 }
 
 .plate img {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   object-fit: contain;
 }
 
@@ -225,33 +270,116 @@ html[data-icon-shape="rounded"] .plate {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 8px 18px 12px;
+  padding: 9px 18px 13px;
   border-top: 1px solid var(--divider);
 }
 
-.power {
+.who {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
 }
 
-.power button {
+.avatar {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.who-name {
+  font-size: var(--fs-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.power-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.power-btn {
   appearance: none;
   border: 0;
   background: transparent;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: var(--fs-small);
-  padding: 5px 9px;
-  border-radius: 8px;
+  color: var(--text);
+  padding: 6px;
+  border-radius: 50%;
   cursor: default;
+  display: flex;
   transition:
     background var(--t-fast) var(--ease-out),
     color var(--t-fast) var(--ease-out);
 }
 
-.power button:hover {
-  background: rgba(214, 90, 60, 0.22);
+.power-btn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.power-btn:hover,
+.power-btn[aria-expanded="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Opens upward, out of the footer, because there is nothing below it. */
+.power-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 9px);
+  min-width: 150px;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--tooltip-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glass-shadow);
+  animation: menu-in var(--t-fast) var(--ease-out) both;
+  z-index: 5;
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.98);
+  }
+}
+
+.power-menu[hidden] {
+  display: none;
+}
+
+.power-menu button {
+  appearance: none;
+  border: 0;
+  background: transparent;
   color: var(--text);
+  font: inherit;
+  font-size: var(--fs-label);
+  text-align: left;
+  padding: 7px 11px;
+  border-radius: 7px;
+  cursor: default;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.power-menu button:hover {
+  background: var(--accent-soft);
 }
 
 .hint {

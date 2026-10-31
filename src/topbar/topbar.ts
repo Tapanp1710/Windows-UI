@@ -200,7 +200,12 @@ async function syncRegions(): Promise<void> {
   // follows it down over the body; collapsed, its box is just the pill.
   const parts: Array<[HTMLElement, number | null]> = [
     [appPill, null],
-    [islandEl, islandOpen() ? 18 : null],
+    // Collapsed, the island IS its pill. Measuring the container instead takes in
+    // `.island-body`, which keeps its full 330px width while its height is zero -
+    // so the region came out three times wider than the pill and the window's
+    // acrylic showed through the empty part as a pale slab across the middle of
+    // the bar. That was the white marking. See D-034.
+    [islandOpen() ? islandEl : clockPill, islandOpen() ? 18 : null],
     [statusPill, null],
   ];
 
@@ -213,10 +218,9 @@ async function syncRegions(): Promise<void> {
           // region has to be sent the moment the state changes. Measuring then gives
           // the collapsed size and the region clips the body away as it grows. So an
           // open island reserves its full footprint instead of its current one.
-          const r =
-            el === islandEl && islandOpen()
-              ? islandFootprint()
-              : el.getBoundingClientRect();
+          // `islandEl` is only in this list while the island is open, so reaching it
+          // here means the footprint is the right measure.
+          const r = el === islandEl ? islandFootprint() : el.getBoundingClientRect();
           // Inflated by the shadow's reach, with a matching corner radius: a region
           // tight to the pill clips the shadow into four hard corners, which is
           // what made these look like sharp slabs rather than floating islands.
@@ -255,7 +259,7 @@ function openPanel(kind: string, anchor: HTMLElement, width: number, height: num
 }
 
 for (const el of [netBtn, btBtn, volBtn, battBtn]) {
-  el.addEventListener("click", () => openPanel("quick", statusPill, 330, 252));
+  el.addEventListener("click", () => openPanel("quick", statusPill, 348, 536));
 }
 
 // The clock moved onto the status pill, so it is the clock itself that opens the

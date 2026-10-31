@@ -102,7 +102,7 @@ button.pill,
 }
 
 .icon-btn:hover {
-  background: rgba(232, 130, 62, 0.20);
+  background: var(--accent-soft);
 }
 
 .icon-btn svg {

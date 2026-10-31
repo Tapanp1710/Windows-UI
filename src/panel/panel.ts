@@ -17,13 +17,69 @@ import "./panel.css";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-const ICON = {
-  wifiOn: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2.5 8.5a15 15 0 0 1 19 0"/><path d="M5.5 12a10.5 10.5 0 0 1 13 0"/><path d="M8.5 15.3a6 6 0 0 1 7 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/></svg>`,
-  wifiOff: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8.5 15.3a6 6 0 0 1 7 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/><path d="M3 3l18 18" opacity="0.9"/></svg>`,
-  bt: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M7 7.5 17 16.5 12 21V3l5 4.5L7 16.5"/></svg>`,
-  volHigh: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3L11 6v12l-4-3.5H4z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6"/><path d="M18 6.5a7.5 7.5 0 0 1 0 11"/></svg>`,
-  volMute: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3L11 6v12l-4-3.5H4z" fill="currentColor"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>`,
+const SVG = (d: string, extra = "") =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}${extra}</svg>`;
+
+const ICON: Record<string, string> = {
+  wifi: SVG(`<path d="M2.5 8.5a15 15 0 0 1 19 0"/><path d="M5.5 12a10.5 10.5 0 0 1 13 0"/><path d="M8.5 15.3a6 6 0 0 1 7 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/>`),
+  wifiOff: SVG(`<path d="M8.5 15.3a6 6 0 0 1 7 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/><path d="M3 3l18 18"/>`),
+  bluetooth: SVG(`<path d="M7 7.5 17 16.5 12 21V3l5 4.5L7 16.5"/>`),
+  airplane: SVG(`<path d="M10.5 3.5a1.5 1.5 0 0 1 3 0V9l7.5 4.2v2.3L13.5 13v4.6l2.5 1.7v1.9L12 20l-4 1.2v-1.9l2.5-1.7V13L3 15.5v-2.3L10.5 9z"/>`),
+  battsaver: SVG(`<rect x="2.5" y="7.5" width="16" height="9" rx="2.5"/><path d="M21 11v2"/><path d="M11.5 9.8 8.8 13h3l-1 2.4L13.8 12h-3z" fill="currentColor" stroke="none"/>`),
+  nightlight: SVG(`<path d="M20 13.5A8 8 0 0 1 10.5 4a8.2 8.2 0 1 0 9.5 9.5z"/>`),
+  accessibility: SVG(`<circle cx="12" cy="4.6" r="1.8"/><path d="M4.5 8.2c4.8 1.6 10.2 1.6 15 0"/><path d="M12 8.6v5m0 0-2.6 6.4M12 13.6l2.6 6.4"/>`),
+  nearby: SVG(`<path d="M12 20.5 3.5 12 12 3.5 20.5 12z"/><path d="M9 12h6m-2.5-2.5L15 12l-2.5 2.5"/>`),
+  cast: SVG(`<rect x="2.5" y="4.5" width="19" height="13" rx="2.5"/><path d="M8 20.5h8"/><path d="M6 14.5a3.5 3.5 0 0 1 3.5 3.5"/>`),
+  project: SVG(`<rect x="2.5" y="4.5" width="19" height="12" rx="2"/><path d="M8 20h8m-4-3.5V20"/>`),
+  vpn: SVG(`<rect x="4.5" y="10.5" width="15" height="9.5" rx="2.5"/><path d="M8 10.5V7.8a4 4 0 0 1 8 0v2.7"/>`),
+  hotspot: SVG(`<circle cx="12" cy="13" r="2.2"/><path d="M8.4 9.4a5 5 0 0 0 0 7.2m7.2-7.2a5 5 0 0 1 0 7.2"/><path d="M5.6 6.6a9 9 0 0 0 0 12.8m12.8-12.8a9 9 0 0 1 0 12.8"/>`),
+  brightness: SVG(`<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4"/>`),
+  volHigh: SVG(`<path d="M4 9.5h3L11 6v12l-4-3.5H4z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6"/><path d="M18 6.5a7.5 7.5 0 0 1 0 11"/>`),
+  volMute: SVG(`<path d="M4 9.5h3L11 6v12l-4-3.5H4z" fill="currentColor"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>`),
+  chevron: SVG(`<path d="M9 6l6 6-6 6"/>`),
 };
+
+/**
+ * Everything the Windows taskbar's Quick Settings offers, in the order it offers it.
+ *
+ * Three kinds of tile, and the difference matters:
+ *
+ * - `toggle` drives real hardware through `Windows.Devices.Radios`. Wi-Fi, Bluetooth
+ *   and Airplane mode are switches, not pictures of switches.
+ * - `page` opens the real Windows surface for things Windows exposes no API to set.
+ *   Night light, Battery saver, Nearby sharing, VPN and Mobile hotspot have no
+ *   supported way to toggle from another process, and faking one would mean driving
+ *   undocumented registry state behind Windows' back - exactly what the brief rules
+ *   out. So the tile takes you to the real control in one click instead of silently
+ *   doing nothing.
+ * - A toggle tile that also has a `page` grows a chevron, the way Windows' own
+ *   Wi-Fi tile does: the switch on the left, "take me to the full list" on the right.
+ */
+interface Tile {
+  id: string;
+  name: string;
+  icon: string;
+  /** Drives real hardware. */
+  toggle?: boolean;
+  /** ms-settings: URI this tile opens, from the chevron or the whole tile. */
+  page?: string;
+  /** The projection flyout - what Win+P shows. Not an ms-settings page. */
+  project?: boolean;
+}
+
+const TILES: Tile[] = [
+  { id: "wifi", name: "Wi-Fi", icon: "wifi", toggle: true, page: "ms-settings:network-wifi" },
+  { id: "bluetooth", name: "Bluetooth", icon: "bluetooth", toggle: true, page: "ms-settings:bluetooth" },
+  { id: "airplane", name: "Airplane mode", icon: "airplane", toggle: true, page: "ms-settings:network-airplanemode" },
+  { id: "battsaver", name: "Battery saver", icon: "battsaver", page: "ms-settings:batterysaver" },
+  { id: "nightlight", name: "Night light", icon: "nightlight", page: "ms-settings:nightlight" },
+  { id: "accessibility", name: "Accessibility", icon: "accessibility", page: "ms-settings:easeofaccess" },
+  { id: "nearby", name: "Nearby sharing", icon: "nearby", page: "ms-settings:crossdevice" },
+  { id: "cast", name: "Cast", icon: "cast", page: "ms-settings:connecteddevices" },
+  { id: "project", name: "Project", icon: "project", project: true },
+  { id: "vpn", name: "VPN", icon: "vpn", page: "ms-settings:network-vpn" },
+  { id: "hotspot", name: "Mobile hotspot", icon: "hotspot", page: "ms-settings:network-mobilehotspot" },
+];
 
 interface RadioInfo {
   kind: string;
@@ -55,18 +111,110 @@ async function applyGlass(): Promise<void> {
 
 /* ------------------------------------------------------- quick settings */
 
-function paintTile(id: string, iconId: string, subId: string, r: RadioInfo | undefined, sub: string): void {
-  const tile = $<HTMLButtonElement>(id);
-  const on = Boolean(r?.on);
-  tile.setAttribute("aria-pressed", on ? "true" : "false");
-  tile.disabled = !r || !r.canToggle;
-  $(subId).textContent = r ? sub : "Not available";
-  $(iconId).innerHTML =
-    iconId === "i-wifi" ? (on ? ICON.wifiOn : ICON.wifiOff) : ICON.bt;
-  $(iconId).style.opacity = on ? "1" : "0.65";
+let radios: RadioInfo[] = [];
+
+/** Airplane mode is on when every radio we can see is off. */
+function airplaneOn(): boolean {
+  return radios.length > 0 && radios.every((r) => !r.on);
 }
 
-let radios: RadioInfo[] = [];
+function tileState(t: Tile): { on: boolean; enabled: boolean; sub: string } {
+  if (!t.toggle) return { on: false, enabled: true, sub: "Open settings" };
+  if (t.id === "airplane") {
+    const any = radios.some((r) => r.canToggle);
+    const on = airplaneOn();
+    return { on, enabled: any, sub: any ? (on ? "On" : "Off") : "No radios" };
+  }
+  const r = radios.find((x) => x.kind === t.id);
+  if (!r) return { on: false, enabled: false, sub: "Not available" };
+  return { on: r.on, enabled: r.canToggle, sub: r.on ? "On" : "Off" };
+}
+
+function buildTiles(): void {
+  const host = $("tiles");
+  host.textContent = "";
+  for (const t of TILES) {
+    const tile = document.createElement("button");
+    tile.type = "button";
+    tile.className = "tile";
+    tile.dataset.id = t.id;
+    if (t.toggle) tile.classList.add("toggle");
+    tile.innerHTML = `
+      <span class="tile-icon"></span>
+      <span class="tile-text">
+        <span class="tile-name">${t.name}</span>
+        <span class="tile-sub">—</span>
+      </span>`;
+
+    tile.addEventListener("click", () => void onTile(t));
+
+    // A toggle that also has a settings page gets the chevron Windows gives it.
+    if (t.toggle && t.page) {
+      const go = document.createElement("button");
+      go.type = "button";
+      go.className = "tile-go";
+      go.innerHTML = ICON.chevron;
+      go.setAttribute("aria-label", `${t.name} settings`);
+      // Without this the click would also fire the tile underneath and flip the radio.
+      go.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void openPage(t.page!);
+      });
+      tile.appendChild(go);
+    }
+    host.appendChild(tile);
+  }
+  paintTiles();
+}
+
+function paintTiles(): void {
+  for (const t of TILES) {
+    const el = document.querySelector<HTMLButtonElement>(`.tile[data-id="${t.id}"]`);
+    if (!el) continue;
+    const { on, enabled, sub } = tileState(t);
+    el.setAttribute("aria-pressed", t.toggle ? String(on) : "false");
+    el.classList.toggle("on", on);
+    el.disabled = !enabled;
+    el.querySelector(".tile-sub")!.textContent = sub;
+    const icon = t.id === "wifi" && !on ? "wifiOff" : t.icon;
+    el.querySelector(".tile-icon")!.innerHTML = ICON[icon];
+  }
+}
+
+async function openPage(page: string): Promise<void> {
+  await invoke("cmd_open_ms_settings", { page });
+  await invoke("cmd_close_panel");
+}
+
+async function onTile(t: Tile): Promise<void> {
+  if (t.project) {
+    await invoke("cmd_open_project");
+    await invoke("cmd_close_panel");
+    return;
+  }
+  if (!t.toggle) {
+    if (t.page) await openPage(t.page);
+    return;
+  }
+
+  const { on, enabled } = tileState(t);
+  if (!enabled) return;
+
+  // Paint the new state at once. A radio takes a moment to actually switch, and a
+  // tile that does nothing for a second feels broken. Rust queues the change and
+  // the next snapshot corrects this if the radio refuses.
+  if (t.id === "airplane") {
+    for (const r of radios) if (r.canToggle) r.on = on;
+    paintTiles();
+    await invoke("cmd_set_airplane", { on: !on });
+  } else {
+    const r = radios.find((x) => x.kind === t.id);
+    if (!r) return;
+    r.on = !r.on;
+    paintTiles();
+    await invoke("cmd_set_radio", { kind: t.id, on: r.on });
+  }
+}
 
 async function refreshRadios(): Promise<void> {
   try {
@@ -74,31 +222,10 @@ async function refreshRadios(): Promise<void> {
   } catch {
     radios = [];
   }
-  const wifi = radios.find((r) => r.kind === "wifi");
-  const bt = radios.find((r) => r.kind === "bluetooth");
-  paintTile("t-wifi", "i-wifi", "s-wifi", wifi, wifi?.on ? "On" : "Off");
-  paintTile("t-bt", "i-bt", "s-bt", bt, bt?.on ? "On" : "Off");
+  paintTiles();
 }
 
-function wireTile(id: string, kind: string): void {
-  $(id).addEventListener("click", async () => {
-    const current = radios.find((r) => r.kind === kind);
-    if (!current || !current.canToggle) return;
-    // Paint the new state at once; a radio takes a moment to actually switch and a
-    // tile that does nothing for a second feels broken.
-    current.on = !current.on;
-    await refreshPaintOnly();
-    await invoke("cmd_set_radio", { kind, on: current.on });
-    await refreshRadios();
-  });
-}
-
-async function refreshPaintOnly(): Promise<void> {
-  const wifi = radios.find((r) => r.kind === "wifi");
-  const bt = radios.find((r) => r.kind === "bluetooth");
-  paintTile("t-wifi", "i-wifi", "s-wifi", wifi, wifi?.on ? "On" : "Off");
-  paintTile("t-bt", "i-bt", "s-bt", bt, bt?.on ? "On" : "Off");
-}
+/* ---------------------------------------------------------------- sliders */
 
 async function refreshStatus(): Promise<void> {
   let s: Status;
@@ -140,6 +267,33 @@ function wireVolume(): void {
     $("vol-out").textContent = `${level}%`;
     await invoke("cmd_set_volume", { level });
   });
+}
+
+/**
+ * The brightness slider, where the machine has a panel that can be dimmed.
+ *
+ * Desktops with external monitors have no WMI brightness instance, so Rust answers
+ * null and the row stays hidden rather than showing a slider that moves nothing.
+ * The minimum is 10, not 0: WmiSetBrightness(0) blanks some panels completely.
+ */
+async function wireBrightness(): Promise<void> {
+  const level = await invoke<number | null>("cmd_brightness").catch(() => null);
+  if (level === null) return;
+
+  const row = $<HTMLElement>("bright-row");
+  const slider = $<HTMLInputElement>("bright");
+  row.hidden = false;
+  $("bright-icon").innerHTML = ICON.brightness;
+  slider.value = String(Math.max(10, level));
+  $("bright-out").textContent = `${level}%`;
+
+  slider.addEventListener("input", () => {
+    $("bright-out").textContent = `${slider.value}%`;
+  });
+  // Same reasoning as the volume slider: each change is a WMI round trip.
+  slider.addEventListener("change", () =>
+    void invoke("cmd_set_brightness", { level: Number(slider.value) }),
+  );
 }
 
 /* ------------------------------------------------------------- calendar */
@@ -205,11 +359,15 @@ async function main(): Promise<void> {
     });
   } else {
     $("quick").hidden = false;
-    wireTile("t-wifi", "wifi");
-    wireTile("t-bt", "bluetooth");
+    buildTiles();
     wireVolume();
-    await Promise.all([refreshRadios(), refreshStatus()]);
-    window.setInterval(() => void refreshStatus(), 1500);
+    await Promise.all([refreshRadios(), refreshStatus(), wireBrightness()]);
+    // Radios are polled in Rust on their own thread, so asking for the snapshot is
+    // a memory read; it is safe to do it on the same tick as the rest.
+    window.setInterval(() => {
+      void refreshStatus();
+      void refreshRadios();
+    }, 1500);
   }
 }
 
