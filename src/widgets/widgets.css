@@ -1,0 +1,253 @@
+/*
+ * Desktop widgets.
+ *
+ * The window covers the whole screen but is clipped to the widget cards with
+ * SetWindowRgn, so everything between them is ordinary desktop. Cards therefore need
+ * a definite size the moment they are laid out — a card that measures 0 would carve
+ * nothing out of the region and become unclickable.
+ */
+
+body {
+  position: relative;
+}
+
+.w {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* Set from widgets.ts; the transform is what the drag moves. */
+  transform: translate(var(--x, 0px), var(--y, 0px));
+  /* Hidden widgets must take no space and claim no clickable region. */
+  display: block;
+}
+
+.w[hidden] {
+  display: none;
+}
+
+.w.dragging .card {
+  /* A gentle lift so it is obvious which card you have hold of. */
+  transform: scale(1.03);
+  box-shadow:
+    0 2px 6px rgba(60, 40, 25, 0.18),
+    0 16px 40px rgba(60, 40, 25, 0.26);
+}
+
+.w .card {
+  padding: 14px 16px;
+  border-radius: var(--radius-card);
+  cursor: default;
+  transition:
+    transform var(--t-fast) var(--ease-out),
+    box-shadow var(--t-fast) var(--ease-out);
+  /* A little denser than the dock's glass. Widgets sit on the wallpaper, where the
+     dock's opacity reads beautifully - but they also sit over desktop ICONS, and at
+     0.90 the icon labels underneath showed through the clock's own text. 0.96 still
+     reads as glass over a photo and stays legible over a crowded desktop. */
+  background: var(--tooltip-bg);
+}
+
+/* --- clock ---------------------------------------------------------------- */
+
+#w-clock .card {
+  min-width: 190px;
+  text-align: center;
+}
+
+.time {
+  font-size: 46px;
+  font-weight: 300;
+  line-height: 1.05;
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+}
+
+.date {
+  margin-top: 2px;
+  font-size: var(--fs-label);
+  color: var(--text-dim);
+}
+
+/* --- calendar ------------------------------------------------------------- */
+
+#w-calendar .card {
+  min-width: 212px;
+}
+
+.cal-head {
+  text-align: center;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-grid span {
+  width: 26px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+
+.cal-grid .dow {
+  color: var(--text-dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.cal-grid .today {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* --- weather -------------------------------------------------------------- */
+
+#w-weather .card {
+  min-width: 150px;
+}
+
+.wx-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.wx-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.wx-temp {
+  font-size: 30px;
+  font-weight: 300;
+  font-variant-numeric: tabular-nums;
+}
+
+.wx-desc {
+  margin-top: 2px;
+  font-size: var(--fs-small);
+}
+
+.wx-city {
+  margin-top: 1px;
+  font-size: var(--fs-small);
+  color: var(--text-dim);
+}
+
+/* --- media ---------------------------------------------------------------- */
+
+#w-media .card {
+  min-width: 210px;
+  max-width: 260px;
+}
+
+.mz-title {
+  font-size: var(--fs-label);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mz-artist {
+  font-size: var(--fs-small);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 15px;
+}
+
+.mz-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.mz-controls button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 4px;
+  border-radius: 50%;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.mz-controls button:hover {
+  background: var(--plate-bg);
+}
+
+.mz-controls button svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.mz-controls .primary svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* --- system stats --------------------------------------------------------- */
+
+#w-stats .card {
+  min-width: 190px;
+}
+
+.stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-small);
+  height: 22px;
+}
+
+.stat-label {
+  width: 50px;
+  color: var(--text-dim);
+}
+
+.stat-value {
+  width: 48px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.meter {
+  flex: 1 1 auto;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--glass-edge);
+  overflow: hidden;
+}
+
+.meter i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width var(--t-base) var(--ease-out);
+}
+
+.meter i.low {
+  background: #d8603f;
+}

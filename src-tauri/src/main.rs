@@ -26,11 +26,39 @@ static RESTORED: AtomicBool = AtomicBool::new(false);
 /// The watchdog child, killed on a clean shutdown so it does not fire a redundant
 /// restore after we have already done one.
 static WATCHDOG: Mutex<Option<std::process::Child>> = Mutex::new(None);
+/// WebView2 arguments, identical for every window in this app.
+///
+/// `--process-per-site --renderer-process-limit=1` makes all our panels share ONE
+/// renderer process instead of one each. They are all the same origin and all our own
+/// code, and each extra renderer measured about 35 MB of private bytes - which is the
+/// difference between meeting the memory target and missing it.
+///
+/// The first three arguments are wry's own defaults: setting this option replaces them
+/// rather than adding to them, so they have to be repeated. Every window must pass the
+/// SAME string, or WebView2 refuses to share one environment between them.
+const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --process-per-site --renderer-process-limit=1";
+
 /// Pixels reserved at the top for the top bar, re-asserted periodically because
 /// other shell events can reset the work area behind our back.
 pub static RESERVED_TOP: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
 /// Kept alive for the life of the app; cleared on shutdown to stop the sampler.
 static AUTOHIDE_RUNNING: Mutex<Option<std::sync::Arc<AtomicBool>>> = Mutex::new(None);
+/// The widget layer's window handle, so the sampler can keep it parked just above the
+/// desktop. 0 when there is no widget layer.
+pub static WIDGETS_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+/// Set while the tray overflow is deliberately showing the Windows taskbar, so the
+/// periodic re-assert does not yank it away mid-click.
+pub static TASKBAR_SHOW_ALLOWED: AtomicBool = AtomicBool::new(false);
+/// The last foreground window that was NOT one of ours.
+///
+/// WS_EX_NOACTIVATE stops Windows activating the widget layer, but WebView2 calls
+/// SetFocus on its own child when clicked, which activates the top-level window
+/// anyway - measured: pressing "pause" on the widget moved the foreground window to
+/// `macui widgets`. Pressing a transport control must not take the caret out of
+/// whatever the user is typing in, so the previous window is remembered here and
+/// put back.
+pub static LAST_FOREIGN_FOREGROUND: std::sync::atomic::AtomicIsize =
+    std::sync::atomic::AtomicIsize::new(0);
 
 /// Put Windows back exactly as we found it. Idempotent and safe to call from any
 /// shutdown path.
@@ -137,6 +165,10 @@ fn main() {
             cmd_set_start_at_login,
             cmd_set_wallpaper,
             cmd_return_to_normal,
+            cmd_widget_data,
+            cmd_media_control,
+            cmd_set_widget_positions,
+            cmd_widget_restore_focus,
         ])
         .setup(|app| {
             if let Err(e) = build_tray(app.handle()) {
@@ -173,6 +205,8 @@ fn main() {
                     logln!("could not open the settings window: {e}");
                 }
             }
+            // Only costs anything when something is actually playing.
+            win::media::start();
             AUTOHIDE_RUNNING
                 .lock()
                 .unwrap()
@@ -267,7 +301,11 @@ struct RegionRect {
     h: i32,
 }
 
-/// Limit the top bar window's clickable area to its three pills.
+/// Limit a window's clickable area to the given rectangles.
+///
+/// Used by the top bar (its three pills) and by the widget layer (its widgets), both
+/// of which span a lot of screen they must not steal clicks from. The frontend owns
+/// the rectangles because only it knows where things ended up after layout.
 #[tauri::command]
 fn cmd_set_topbar_regions(window: tauri::Window, rects: Vec<RegionRect>) -> tauri::Result<()> {
     let scale = window.scale_factor().unwrap_or(1.0);
@@ -304,6 +342,7 @@ fn cmd_open_notifications() {
 /// long enough for the click to land, then hidden again.
 #[tauri::command]
 fn cmd_open_tray_overflow() {
+    TASKBAR_SHOW_ALLOWED.store(true, Ordering::SeqCst);
     win::taskbar::restore_taskbar(None);
     std::thread::sleep(std::time::Duration::from_millis(120));
     let clicked = win::open_tray_overflow();
@@ -317,6 +356,7 @@ fn cmd_open_tray_overflow() {
     std::thread::spawn(|| {
         std::thread::sleep(std::time::Duration::from_millis(2500));
         win::taskbar::hide_taskbar();
+        TASKBAR_SHOW_ALLOWED.store(false, Ordering::SeqCst);
     });
 }
 
@@ -666,6 +706,7 @@ fn open_settings(app: &tauri::AppHandle) -> tauri::Result<()> {
     .transparent(true)
     .shadow(false)
     .center()
+    .additional_browser_args(BROWSER_ARGS)
     .build()?;
     logln!("settings window created");
     // Focus is a courtesy, not a requirement: a failure here must not look like a
@@ -729,8 +770,11 @@ fn cmd_get_config() -> ConfigPayload {
 /// A patch rather than a whole-object write: the settings window never sees `pinned`,
 /// and sending the whole struct back would let a window that has been open since
 /// before a drag-to-reorder silently undo it.
+/// `async` for the same reason as `cmd_open_settings`: applying a patch can create
+/// or destroy the widget window, and window work must not happen on the main thread
+/// inside the WebView2 callback that delivered this message (D-012).
 #[tauri::command]
-fn cmd_patch_settings(app: tauri::AppHandle, patch: serde_json::Value) -> Result<(), String> {
+async fn cmd_patch_settings(app: tauri::AppHandle, patch: serde_json::Value) -> Result<(), String> {
     let incoming = patch.as_object().ok_or("the patch must be an object")?;
     let mut current = serde_json::to_value(settings::load()).map_err(|e| e.to_string())?;
     let map = current
@@ -777,6 +821,120 @@ fn cmd_set_wallpaper(app: tauri::AppHandle, which: String) -> bool {
     wallpaper::set(&app, &which)
 }
 
+/* ------------------------------------------------------------------ PHASE 5
+ * Desktop widgets: one transparent window parked just above the desktop, holding
+ * all five widgets. One window rather than five, for two reasons - each live window
+ * is its own WebView2 renderer (about 25 MB private), and dragging a widget from one
+ * corner to another inside a single layer is a CSS transform rather than a Win32
+ * window move.
+ */
+
+/// Everything the widgets poll for. Clock, calendar and weather need nothing from
+/// Rust: the clock is the system clock, and the weather comes straight from
+/// Open-Meteo over the webview's own `fetch`, which needs no API key and no
+/// HTTP client in the backend.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WidgetData {
+    load: win::sysinfo::SysLoad,
+    battery: win::status::Battery,
+    media: win::media::NowPlaying,
+}
+
+#[tauri::command]
+fn cmd_widget_data() -> WidgetData {
+    WidgetData {
+        load: win::sysinfo::load(),
+        battery: win::status::battery(),
+        media: win::media::now_playing(),
+    }
+}
+
+/// "toggle", "next" or "previous", handed to Windows' own media session.
+#[tauri::command]
+fn cmd_media_control(action: String) {
+    win::media::control(&action);
+}
+
+/// Hand focus back to whatever the user was working in.
+///
+/// Called by the widget layer immediately after a click on one of its controls. A
+/// no-op if nothing was recorded, or if the recorded window has since closed.
+#[tauri::command]
+fn cmd_widget_restore_focus() {
+    let hwnd = LAST_FOREIGN_FOREGROUND.load(Ordering::SeqCst);
+    if hwnd != 0 {
+        win::apps::activate(hwnd);
+    }
+}
+
+/// Save where the user dragged the widgets, and which are switched on.
+#[tauri::command]
+fn cmd_set_widget_positions(
+    positions: std::collections::BTreeMap<String, settings::WidgetState>,
+) {
+    settings::update(|s| s.widgets = positions);
+}
+
+/// Create or destroy the widget layer to match the setting.
+///
+/// Destroyed rather than hidden, so switching widgets off actually gives the
+/// renderer process back instead of leaving it parked.
+fn apply_widgets(app: &tauri::AppHandle) {
+    let want = settings::load().widgets_enabled;
+    let existing = app.get_webview_window("widgets");
+
+    match (want, existing) {
+        (false, Some(w)) => {
+            let _ = w.close();
+            logln!("widget layer closed");
+        }
+        (true, None) => {
+            if let Err(e) = build_widgets(app) {
+                logln!("could not create the widget layer: {e}");
+            }
+        }
+        _ => {}
+    }
+}
+
+fn build_widgets(app: &tauri::AppHandle) -> tauri::Result<()> {
+    let (sw, sh) = win::taskbar::screen_size();
+    let scale = app
+        .get_webview_window("dock")
+        .and_then(|w| w.scale_factor().ok())
+        .unwrap_or(1.0);
+
+    let w = tauri::WebviewWindowBuilder::new(
+        app,
+        "widgets",
+        tauri::WebviewUrl::App("widgets.html".into()),
+    )
+    .title("macui widgets")
+    .inner_size(sw as f64 / scale, sh as f64 / scale)
+    .position(0.0, 0.0)
+    .resizable(false)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .skip_taskbar(true)
+    // Never takes focus. Clicking "next track" must not pull focus out of whatever
+    // the user is typing in - that would be a change to how Windows behaves.
+    .focused(false)
+    .focusable(false)
+    .always_on_top(false)
+    .additional_browser_args(BROWSER_ARGS)
+    .build()?;
+
+    if let Ok(h) = w.hwnd() {
+        let raw = h.0 as isize;
+        win::place_above_desktop(raw);
+        WIDGETS_HWND.store(raw, Ordering::SeqCst);
+    }
+    logln!("widget layer created ({sw}x{sh} physical)");
+    Ok(())
+}
+
 /// Push the current settings into the running UI.
 ///
 /// `initial` is true during `setup()`, where the enabled windows must NOT be shown
@@ -803,6 +961,7 @@ fn apply_settings(app: &tauri::AppHandle, initial: bool) {
     }
 
     apply_work_area(app);
+    apply_widgets(app);
     // The dock and the top bar both re-read `cmd_system_prefs` on this event, so
     // theme, icon shape and animation speed change without a restart.
     let _ = app.emit("dock:prefs", ());

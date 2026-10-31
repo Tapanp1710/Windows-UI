@@ -31,7 +31,8 @@
         "visible": true,
         "maximizable": false,
         "minimizable": false,
-        "closable": false
+        "closable": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --process-per-site --renderer-process-limit=1"
       },
       {
         "label": "topbar",
@@ -51,7 +52,8 @@
         "visible": true,
         "maximizable": false,
         "minimizable": false,
-        "closable": false
+        "closable": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --process-per-site --renderer-process-limit=1"
       }
     ]
   },

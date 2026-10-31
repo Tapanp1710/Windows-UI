@@ -4,8 +4,10 @@
 pub mod appbar;
 pub mod apps;
 pub mod icons;
+pub mod media;
 pub mod pins;
 pub mod status;
+pub mod sysinfo;
 pub mod taskbar;
 
 use windows::Win32::Foundation::POINT;
@@ -243,4 +245,34 @@ pub fn bluetooth() -> (bool, bool) {
             .unwrap_or(false)
     });
     (present, present)
+}
+
+/// Park a window directly above the desktop, below every ordinary window.
+///
+/// `alwaysOnBottom` sends a window to `HWND_BOTTOM`, which on Windows is *below*
+/// `Progman` — the desktop itself — and therefore invisible. Inserting immediately
+/// after `Progman` instead puts the widget layer exactly where the brief asks for it:
+/// part of the desktop, never covering an application.
+///
+/// Called again periodically, because the shell re-sorts the z-order on its own
+/// (a window being activated, a display change, Win+D) and there is no notification
+/// to hook for it.
+pub fn place_above_desktop(hwnd_raw: isize) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        FindWindowW, SetWindowPos, HWND_BOTTOM, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    };
+
+    unsafe {
+        let desktop = FindWindowW(windows::core::w!("Progman"), None).unwrap_or(HWND_BOTTOM);
+        let _ = SetWindowPos(
+            HWND(hwnd_raw as *mut _),
+            desktop,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
+    }
 }

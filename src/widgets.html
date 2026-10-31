@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>macui widgets</title>
+    <script>
+      // Diagnostics into the app's log file; these windows have no console.
+      window.__diag = [];
+      function __report(kind, msg) {
+        window.__diag.push(kind + ": " + msg);
+        try {
+          window.__TAURI_INTERNALS__.invoke("cmd_log", { msg: "[widgets] " + kind + ": " + msg });
+        } catch (e) {}
+      }
+      addEventListener(
+        "error",
+        function (e) {
+          if (e.target && e.target !== window && e.target.tagName) {
+            __report("LOAD-FAIL", e.target.tagName + " " + (e.target.src || e.target.href));
+          } else {
+            __report("ERR", e.message + " @" + e.lineno);
+          }
+        },
+        true,
+      );
+      addEventListener("unhandledrejection", function (e) {
+        __report("REJECT", String(e.reason));
+      });
+    </script>
+    <link rel="stylesheet" href="./shared/theme.css" />
+    <link rel="stylesheet" href="./widgets/widgets.css" />
+  </head>
+  <body>
+    <!-- Every widget is absolutely positioned inside this one transparent, desktop-
+         level window. The window's clickable region is cut down to exactly these
+         cards, so the rest of the desktop - icons, right-click menu, drag-select -
+         behaves as if nothing were there. -->
+
+    <section class="w" id="w-clock" data-widget="clock">
+      <div class="card glass">
+        <div class="time" id="clock-time">--:--</div>
+        <div class="date" id="clock-date"></div>
+      </div>
+    </section>
+
+    <section class="w" id="w-calendar" data-widget="calendar">
+      <div class="card glass">
+        <header class="cal-head"><span id="cal-month"></span></header>
+        <div class="cal-grid" id="cal-grid"></div>
+      </div>
+    </section>
+
+    <section class="w" id="w-weather" data-widget="weather">
+      <div class="card glass">
+        <div class="wx-top">
+          <span class="wx-icon" id="wx-icon"></span>
+          <span class="wx-temp" id="wx-temp">--°</span>
+        </div>
+        <div class="wx-desc" id="wx-desc">…</div>
+        <div class="wx-city" id="wx-city"></div>
+      </div>
+    </section>
+
+    <section class="w" id="w-media" data-widget="media">
+      <div class="card glass">
+        <div class="mz-title" id="mz-title">Nothing playing</div>
+        <div class="mz-artist" id="mz-artist"></div>
+        <div class="mz-controls">
+          <button id="mz-prev" title="Previous" aria-label="Previous track"></button>
+          <button id="mz-play" class="primary" title="Play / pause" aria-label="Play or pause"></button>
+          <button id="mz-next" title="Next" aria-label="Next track"></button>
+        </div>
+      </div>
+    </section>
+
+    <section class="w" id="w-stats" data-widget="stats">
+      <div class="card glass">
+        <div class="stat">
+          <span class="stat-label">CPU</span>
+          <span class="meter"><i id="st-cpu-bar"></i></span>
+          <span class="stat-value" id="st-cpu">–</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">RAM</span>
+          <span class="meter"><i id="st-ram-bar"></i></span>
+          <span class="stat-value" id="st-ram">–</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Battery</span>
+          <span class="meter"><i id="st-bat-bar"></i></span>
+          <span class="stat-value" id="st-bat">–</span>
+        </div>
+      </div>
+    </section>
+
+    <script type="module" src="./widgets/widgets.ts"></script>
+  </body>
+</html>

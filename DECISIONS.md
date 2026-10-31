@@ -259,3 +259,95 @@ taskbar, which is the same wall as D-006.
 the taskbar visible, e.g. when the watchdog fails to start and the app refuses to hide
 it), and give the identical menu two reachable homes: right-click the dock background,
 and right-click any top-bar pill. Nothing is lost and nothing is faked.
+
+---
+
+## D-017 — Weather defaults to Bengaluru
+**Date:** 2026-10-31 · **Phase:** 5
+
+The brief says to default to a city in India and log which one so it can be changed.
+There is nothing on this machine that identifies a city - the timezone says IST and
+that is all - so guessing from data was not an option.
+
+**Decision:** **Bengaluru** (12.9716 N, 77.5946 E). Change it in Settings → Desktop
+widgets → Weather city: type a name, press Enter, and it is looked up through
+Open-Meteo's geocoding service. Verified by switching to Hyderabad and back.
+
+Weather comes from **Open-Meteo**, which the brief names: no account, no API key, no
+rate limit worth worrying about at one call every fifteen minutes.
+
+---
+
+## D-018 — One widget layer, not five widget windows
+**Date:** 2026-10-31 · **Phase:** 5
+
+Five widgets could be five windows. Each live window is its own WebView2 renderer,
+and the brief asks for widgets that sit on the desktop without covering anything.
+
+**Decision:** one transparent window the size of the screen, holding all five widgets,
+with its **clickable area cut down to exactly the visible cards** using the same
+`SetWindowRgn` trick the top bar uses for its pills. Verified by right-clicking
+between two widgets and getting the Windows desktop menu.
+
+That buys three things: one renderer instead of five, dragging a widget across the
+screen is a CSS transform rather than a Win32 window move, and widgets can overlap
+each other's bounding boxes without fighting over z-order.
+
+---
+
+## D-019 — The widget layer is parked above `Progman`, not sent to the bottom
+**Date:** 2026-10-31 · **Phase:** 5
+
+Tauri offers `alwaysOnBottom`, which sends a window to `HWND_BOTTOM`. On Windows that
+is **below `Progman`** - the desktop itself - so the widgets would be behind the
+wallpaper and invisible.
+
+**Decision:** insert the window immediately after `Progman` in the z-order instead,
+which is exactly "part of the desktop, below every application". It is re-asserted
+about once a second on the sampler that already runs, because the shell re-sorts the
+z-order whenever a window is activated and there is no notification to hook.
+
+Verified: the widgets survive Show Desktop (Win+D) and stay hidden under a maximised
+window.
+
+---
+
+## D-020 — All panels share one WebView2 renderer process
+**Date:** 2026-10-31 · **Phase:** 5
+
+Adding the widget layer took idle memory to **258 MB**, past the 250 MB target. Each
+webview was getting its own renderer, at about 35 MB of private bytes each, plus the
+GPU process growing for a full-screen surface.
+
+**Decision:** pass `--process-per-site --renderer-process-limit=1` to WebView2 for
+every window. All our pages are the same origin and all our own code, so there is
+nothing to isolate from anything. Measured: **258.3 MB → 213.9 MB**, and ten processes
+down to eight. Dock, top bar, widgets and settings all verified rendering afterwards.
+
+The trade-off, stated plainly: a renderer crash now takes every panel with it instead
+of one. The watchdog still restores the Windows taskbar, which is the part that
+matters, and the UI layer can be restarted from the tray.
+
+wry's own default arguments have to be repeated in the string, because this option
+**replaces** them rather than adding to them - and every window must pass the same
+string or WebView2 refuses to share an environment between them.
+
+---
+
+## D-021 — Clicking a widget hands focus straight back
+**Date:** 2026-10-31 · **Phase:** 5
+
+The widget layer carries `WS_EX_NOACTIVATE`, so Windows will not activate it on a
+click. WebView2 calls `SetFocus` on its own child anyway, which activates the
+top-level window: measured, pressing "pause" moved the foreground window to
+`macui widgets`.
+
+Taking the caret out of whatever the user is typing in, to skip a track, is exactly
+the kind of behaviour change the core rule forbids.
+
+**Decision:** the sampler remembers the last foreground window that is not one of
+ours, and every widget click ends by handing focus back to it. Verified: after
+clicking pause, the foreground window is the one it was before.
+
+A drag has a 4px threshold for the same reason - a plain click on a card must not
+nudge the layout.

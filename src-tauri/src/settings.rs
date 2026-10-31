@@ -31,11 +31,34 @@ pub struct Settings {
     /// Multiplier on every animation duration. 1.0 = the designed timings.
     pub animation_speed: f64,
 
+    /// Desktop widgets: master switch, then one entry per widget.
+    pub widgets_enabled: bool,
+    /// Keyed by widget id ("clock", "calendar", "weather", "media", "stats").
+    /// Absent keys mean "not placed yet" - the frontend lays those out itself, so a
+    /// new widget in a later version gets a sensible position without a migration.
+    pub widgets: std::collections::BTreeMap<String, WidgetState>,
+
+    /// Weather location. Latitude/longitude are what Open-Meteo actually needs; the
+    /// name is only what we show and what the settings box searched for.
+    pub weather_city: String,
+    pub weather_lat: f64,
+    pub weather_lon: f64,
+
     /// Whatever Windows had as its wallpaper before the user accepted ours, so the
     /// settings window and `restore-windows.ps1` can put it back. `None` means we
     /// have not changed it.
     #[serde(default)]
     pub original_wallpaper: Option<String>,
+}
+
+/// One widget's switch and its position, in CSS pixels from the top left of the
+/// widget layer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetState {
+    pub on: bool,
+    pub x: f64,
+    pub y: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +87,13 @@ impl Default for Settings {
             icon_shape: "circle".into(),
             theme: "auto".into(),
             animation_speed: 1.0,
+            widgets_enabled: true,
+            widgets: std::collections::BTreeMap::new(),
+            // Logged in DECISIONS (D-017): the brief says to default to a city in
+            // India and say which, so this is Bengaluru. Change it in settings.
+            weather_city: "Bengaluru".into(),
+            weather_lat: 12.9716,
+            weather_lon: 77.5946,
             original_wallpaper: None,
         }
     }

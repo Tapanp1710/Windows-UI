@@ -3,8 +3,9 @@
 **Read this file first when resuming.**
 
 ## Current phase
-STEP 0, PHASE 1 (Dock), PHASE 2 (Top bar) and PHASE 6 (Settings / startup / packaging)
-are complete and verified. PHASES 5, 4 and 3 are next, in that order.
+STEP 0, PHASE 1 (Dock), PHASE 2 (Top bar), PHASE 6 (Settings / startup / packaging)
+and PHASE 5 (Desktop widgets) are complete and verified. PHASE 4 (window switcher)
+then PHASE 3 (launcher) are next, in that order.
 
 ## Status summary
 
@@ -14,8 +15,8 @@ are complete and verified. PHASES 5, 4 and 3 are next, in that order.
 | PHASE 1 — Dock | **Core done**, some items outstanding (below) |
 | PHASE 2 — Top bar | **Done**, verified |
 | PHASE 6 — Settings / startup / packaging | **DONE**, verified |
-| PHASE 5 — Desktop widgets | **Not started** — next |
-| PHASE 4 — Window switcher | **Not started** |
+| PHASE 5 — Desktop widgets | **DONE**, verified |
+| PHASE 4 — Window switcher | **Not started** — next |
 | PHASE 3 — Launcher | **Not started** — last, by design (riskiest) |
 
 ---
@@ -91,6 +92,23 @@ a recorded baseline instead of forcing "always visible".
   clicks between them reach the app underneath.
 - 63px is reserved at the top, so maximised windows stop below the bar.
 
+### Desktop widgets (PHASE 5)
+- Five glass widgets on the desktop: **clock**, **calendar** (today highlighted),
+  **weather**, **music controls** and **system stats** (CPU, RAM, battery).
+- They live **behind every window** and **survive Win+D** — they are part of the
+  desktop, not a panel on top of it.
+- **Clicks between them go straight through to the desktop**: the window is clipped to
+  the cards themselves, so icons, right-click and drag-select all behave normally.
+- Drag any widget anywhere; positions are saved. A plain click does not move them.
+- **Weather is live from Open-Meteo** — no account, no API key. Default city
+  **Bengaluru** (D-017); change it in settings and it is geocoded and refreshed.
+- **Music controls drive Windows' own media session** — the same source the volume
+  flyout and lock screen read, so it works with any player that registers one. Title,
+  artist, play/pause, next, previous, all verified against a real session.
+- Each widget has its own switch in settings, plus a master switch that creates and
+  destroys the whole layer.
+- Clicking a widget **hands focus straight back** to whatever you were working in.
+
 ### Settings, startup and packaging (PHASE 6)
 - **A real settings window**, opened from the dock's right-click menu, from a
   right-click on any top-bar pill, or from the tray. Built on demand and destroyed on
@@ -116,18 +134,30 @@ a recorded baseline instead of forcing "always visible".
   taskbar returns, the user's original auto-hide setting is preserved, no orphans).
 - `restore-windows.ps1` recovers the taskbar even when the whole process tree is killed.
 
-### Performance (measured over 30 s idle, dock + top bar, settings closed)
-- **Idle CPU: 0.104%** across all 9 processes (8 cores) — target near-0%. **Met.**
-- **RAM: 200.4 MB private / 453.7 MB working set.** Revised target under 250 MB. **Met.**
+### Performance (30 s idle, dock + top bar + widgets, settings closed)
+- **Idle CPU: 0.195%** across 8 processes — target near-0%. **Met.**
+- **RAM: 213.9 MB private.** Target under 250 MB. **Met.**
 
-Working set overstates it: Chromium's shared binaries are counted once per process.
-Private bytes is the fair number. PHASE 6 added no idle cost — with the settings window
-open it is 210.6 MB, and closing it returns to 200.4 MB.
+Working set overstates it badly, because Chromium's shared binaries are counted once
+per process; private bytes is the fair number.
 
-The original 150 MB target was not reachable with Tauri + WebView2 for a multi-window
-shell; REPORT.md §3.1 has the numbers and the one change that would cut it further.
+How it got there is worth knowing. The widget layer first pushed idle memory to
+**258 MB**, over target, because every webview was getting its own renderer process.
+Passing `--process-per-site --renderer-process-limit=1` to WebView2 makes all our
+panels share one — they are the same origin and all our own code — which brought the
+whole app to **213.9 MB** and ten processes down to eight. See DECISIONS D-020,
+including what that trades away.
 
 ---
+
+## What is NOT done in Phase 5
+- **No widget covers the case of a second monitor.** Positions are clamped to the
+  primary display.
+- The weather widget shows the **current** conditions only — no forecast. The brief
+  asked for weather, not a forecast panel.
+- Widgets sit **above desktop icons** where they overlap them. That is what desktop
+  widgets do, but the default layout does put the clock over the top-left icons; drag
+  it anywhere you prefer and it stays there.
 
 ## What is NOT done in Phase 6
 - The **tray icon** exists and is wired, but cannot be clicked while the app is running:
@@ -187,14 +217,25 @@ These cost real time and are worth not rediscovering:
    that delivered the IPC message. Window creation must be in an `async` command.
 10. **Chromium ignores `::-webkit-scrollbar` entirely once `scrollbar-width` is set**,
    so a half-styled scrollbar silently falls back to the browser default.
-11. The three pages now report JS errors into `macui.log` via `cmd_log`. The old
+11. The pages now report JS errors into `macui.log` via `cmd_log`. The old
    `document.title` diagnostics channel they carried is unreadable from outside,
    because wry does not mirror `document.title` onto the native window title.
+12. **`alwaysOnBottom` puts a window BELOW the desktop**, not just below other
+   windows: `HWND_BOTTOM` is under `Progman`, so the widgets were invisible. Insert
+   directly above `Progman` instead, and re-assert it.
+13. **Two CSS rules with the same specificity are decided by bundler output order**,
+   which is not something to rely on. `.card` and `.glass` both set a background;
+   making it `.w .card` settled it.
+14. **Chromium ignores `::-webkit-scrollbar` once `scrollbar-width` is set.**
+15. **`TryTogglePlayPauseAsync` returns false and does nothing** on media sessions
+   that expose Play and Pause but not the toggle. Ask for the specific transition.
+16. **The Windows taskbar can come back on its own.** The shell's "Open with" dialog
+   did it. Hiding it once at startup is not enough.
 
 ---
 
 ## Next step
-**PHASE 5 — desktop widgets.** Then PHASE 4 (window switcher), then PHASE 3 (launcher).
+**PHASE 4 — window switcher (Alt+Tab).** Then PHASE 3 (launcher).
 
 For PHASE 4 and PHASE 3, the keyboard-hook rules agreed for this run:
 - If the hook fails, is not installed, or an elevated window has focus, Windows' own
