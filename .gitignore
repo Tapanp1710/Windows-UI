@@ -7,3 +7,9 @@ screenshots/
 
 # toolchain archives (installed to %LOCALAPPDATA%, see SYSTEM_CHANGES.md)
 tools/
+
+# Per-machine state, not source. baseline-windows.json records THIS machine's
+# taskbar, work area, theme and wallpaper so restore-windows.ps1 can put them back.
+# Shipping it would hand another machine someone else's "original" state.
+baseline-windows.json
+__pycache__/

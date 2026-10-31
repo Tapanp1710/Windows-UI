@@ -154,7 +154,12 @@ try {
     if (Test-Path $Baseline) {
         try {
             $b = Get-Content $Baseline -Raw | ConvertFrom-Json
-            if ($null -ne $b.taskbarStateRaw) {
+            if ($b.machine -and $b.machine -ne $env:COMPUTERNAME) {
+                # A baseline from another machine is worse than none: it would set
+                # THIS taskbar to whatever THAT one happened to be, and report it as
+                # a faithful restore.
+                Write-Warning "baseline was captured on '$($b.machine)', not '$env:COMPUTERNAME' - ignoring it and using the Windows default. Run scripts\capture-baseline.ps1 -Force on this machine first."
+            } elseif ($null -ne $b.taskbarStateRaw) {
                 $wantState = [int]$b.taskbarStateRaw
                 $src = "baseline-windows.json (captured $($b.capturedAt))"
             }
