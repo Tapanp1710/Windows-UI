@@ -1,10 +1,12 @@
 /*
  * Alt+Tab switcher.
  *
- * The window covers the screen and is click-through everywhere except the bar, so a
- * click outside dismisses it onto whatever is underneath. Each card leaves a hole
- * for its DWM preview: the compositor draws that window's live contents over ours,
- * so nothing may be painted inside `.shot`.
+ * The window is sized to the bar rather than to the screen: a window is a
+ * compositing surface whether it is showing or not, and a screen-sized one costs
+ * real memory for something that only ever occupies a strip down the middle.
+ *
+ * Each card leaves a hole for its DWM preview: the compositor draws that window's
+ * live contents over ours, so nothing may be painted inside `.shot`.
  */
 
 body {
@@ -20,7 +22,7 @@ body {
 }
 
 .bar {
-  max-width: calc(100vw - 80px);
+  max-width: calc(100vw - 24px);
   padding: 16px 16px 10px;
   border-radius: 22px;
   animation: bar-in var(--t-base) var(--ease-out) both;

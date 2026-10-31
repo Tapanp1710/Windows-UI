@@ -2,15 +2,25 @@
 
 Written for: you, the laptop's owner, on waking up.
 
-**Short version:** STEP 0, PHASE 1 (dock), PHASE 2 (top bar), PHASE 6 (settings
-window, tray menu, startup entry, wallpaper, NSIS installer) and **PHASE 5 (desktop
-widgets)** are built, tested and committed. PHASE 4 (window switcher) and PHASE 3
-(launcher) are **not built**. Everything that is built has been verified by running it
-and reading screenshots back, not assumed. Your Windows taskbar always comes back.
+**Short version: all six phases are built**, tested where testing was possible, and
+committed. Dock, top bar with a Dynamic Island, launcher on the Win key, Alt+Tab with
+live previews, desktop widgets, and the settings window with a per-user installer.
+Your Windows taskbar always comes back.
 
-**Memory is inside target**: 213.9 MB private bytes across the whole process tree,
-against the revised 250 MB — with the widgets running. **Animation smoothness still
-needs your eye** — see §3.
+**One thing needs you to run it.** The Win+<key> matrix — Win+E, Win+R, Win+L and the
+rest — is the one claim I could not finish verifying, because the test takes the
+keyboard over for about a minute and you were using the machine:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\winkey-matrix.ps1
+```
+
+It reports what Windows actually did for each combination. If any of them opens the
+launcher instead of doing its job, switch "Use this app's launcher" off in settings
+and tell me — the brief's own fallback.
+
+**Memory is inside target**: 242–246 MB private across the whole process tree,
+against 250 MB, with every phase loaded.
 
 ---
 
@@ -117,6 +127,18 @@ What makes them behave like desktop widgets rather than a floating panel:
 - **A Dynamic Island.** The clock pill expands on hover to what is playing — album
   art, title, transport — and expands on its own for a few seconds when the volume
   changes, the charger goes in or out, or the track changes.
+
+### PHASE 3 — Launcher
+- The **Win key** opens it; the Win key again, or Escape, closes it. So does the
+  dock's Start button.
+- **Every app you have installed** — 158 here, Store apps included, each with its
+  real icon. Search filters them as you type, and also finds files in your own
+  folders.
+- A sidebar of folders to browse, "Open in File Explorer" on right-click, and the
+  four power actions.
+- **The Win key's *release* is the only thing touched**, and only when you pressed
+  and let go of it alone. Win+E, Win+R, Win+L and the rest never reach this code as
+  anything but "something else was pressed" — see the note above about verifying it.
 
 ### PHASE 4 — Window switcher
 - **Alt+Tab** opens a centred glass bar with **live previews** of your windows. They
@@ -304,8 +326,8 @@ Measured over 30 s: dock, top bar, island and all five widgets running, panels c
 
 | Metric | Value | Target | Verdict |
 |---|---|---|---|
-| Idle CPU | **0.21%** across 8 processes (8 cores) | near-0% | **met** |
-| Private bytes | **229.3 MB** | under 250 MB | **met** |
+| Idle CPU | **~0.2%** across 8 processes (8 cores) | near-0% | **met** |
+| Private bytes | **242–246 MB** over repeated fresh starts | under 250 MB | **met**, with little room left |
 | Processes | 8 (2 ours + 6 WebView2) | — | was 10 before the panels shared a renderer |
 | Without the widgets | ~200 MB | — | the master switch destroys the layer |
 | Before sharing a renderer | 258.3 MB | — | over target; see D-020 |
@@ -321,17 +343,32 @@ second, and the top bar every two seconds. No hooks are installed anywhere in th
 
 ## 7. What is next
 
-**PHASE 3, the launcher, is the only phase left.** It is last by design:
+**Every phase is built.** What is left is the list below.
+
+### First, the one thing I could not finish
+Run `scripts\winkey-matrix.ps1`. It is the verification this project's riskiest
+change deserves and the only outstanding one.
+
+### Then, from your own feedback
+1. **Park a window on the island.** You asked to be able to drop an open window there
+   so it drops out of Alt+Tab, and bring it back later. Files, folders and images are
+   done; windows are not. The switcher already ignores hidden windows, so half of it
+   exists already.
+2. **The rest of the taskbar's settings in the top panel.** It carries Wi-Fi,
+   Bluetooth, volume and battery today — each driving the real thing, not a mock-up —
+   plus links to the matching Windows pages. Brightness, airplane mode and battery
+   saver are the obvious next ones.
+3. **Drop a file onto the island.** It is implemented and the island opens to meet a
+   drag, but I could not test it: synthesising a drag *out of Explorer* is not
+   something this harness can do. It needs your hand. Dragging back *out* is tested
+   and works.
+
+### And the longer-standing ones
+The launcher was last by design:
 capturing the Win key without breaking Win+E, Win+R, Win+L and the rest is the
-riskiest thing in the brief.
+riskiest thing in the brief, and it is the thing still to verify.
 
-The rule it will be held to is the one PHASE 4 was: if the hook fails, is not
-installed, or a window running as administrator has focus, **Windows' own behaviour
-must work**. Every Win-key combination gets tested individually and recorded. If any
-of them breaks, Start stays on the Win key and it gets logged — which the brief
-explicitly allows.
-
-Beyond the remaining phases:
+Beyond that:
 
 1. **Merge the panels into one window.** The biggest memory win still available — one
    WebView2 renderer instead of one per panel, roughly 60 MB of working set each. You
