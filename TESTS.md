@@ -561,3 +561,12 @@ All run against the release build on 2026-10-31, by driving a real mouse pointer
 | N.8 | A network with no profile | by design | opens Windows' flyout, which can ask for the password. This app holds no credentials (D-047) |
 | N.9 | Off the main thread | PASS | `cmd_wifi_list`/`connect`/`disconnect` are async; WLAN calls are cross-process |
 | N.10 | SSIDs rendered safely | PASS | `textContent`, not `innerHTML` |
+
+## Icons, second attempt — they really were inverted (2026-10-31)
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| I.5 | Ground-truth comparison | **CONFIRMED FLIPPED** | Explorer's icon via `Icon::ExtractAssociatedIcon`: tab top-left, blue band bottom. The dock drew it mirrored |
+| I.6 | Root cause | FOUND | a bottom-up DIB (positive `biHeight`) read as top-down. `BITMAP.bmHeight` is always positive and cannot report it; `DIBSECTION.dsBmih.biHeight` can (D-049) |
+| I.7 | Fixed | **PASS** | re-captured and magnified: the folder now matches ground truth — tab top-left, blue band bottom |
+| I.8 | Why D-046 was not enough | explained | the plates were a real problem and are still gone, but the Start button and Recycle Bin are our own SVGs, so they never looked wrong and masked the pattern |

@@ -962,3 +962,32 @@ higher specificity, so setting `.hidden = true` from script changed nothing visi
 
 Worth writing down because it fails silently and looks like a logic bug: every
 element in this project that script hides now carries its own `[hidden]` rule.
+
+---
+
+## D-049 — Shell icons were upside down: DIB row order must be read, not assumed
+**Date:** 2026-10-31 · **Phase:** urgent fix
+
+"The images are inverted" was literal: every icon that came from the shell was
+**flipped vertically**. Established by comparison, not by eye — the same Explorer
+icon pulled through a completely different API (`Icon::ExtractAssociatedIcon`) has
+its folder tab at the top and its blue band at the bottom; the dock drew it the other
+way up.
+
+A Windows DIB with a **positive** `biHeight` is stored bottom-up: the first row in
+memory is the bottom row of the image. Negative means top-down. `hbitmap_to_rgba`
+copied rows straight through as though top-down always held.
+
+The trap is that `BITMAP.bmHeight` from `GetObjectW` is **always positive** — it is
+the magnitude, so it cannot answer the question, and reading it tells you nothing
+while looking like it does. The orientation lives in `DIBSECTION.dsBmih.biHeight`,
+which is a second `GetObjectW` call with a bigger struct.
+
+**Decision:** query `DIBSECTION`, read the sign, and mirror the row index only when
+the bitmap says bottom-up. If the object is not a DIB section (`GetObjectW` writes
+less than the struct) the fallback is top-down, which is what the shell's image
+factory documents.
+
+This is why D-046 looked right and was not the whole story: the Start button and the
+Recycle Bin glyph are our own SVGs and never went through this path, so only real app
+and folder icons were affected — which is exactly the set the user pointed at.
