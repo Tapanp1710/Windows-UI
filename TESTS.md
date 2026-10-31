@@ -570,3 +570,28 @@ All run against the release build on 2026-10-31, by driving a real mouse pointer
 | I.6 | Root cause | FOUND | a bottom-up DIB (positive `biHeight`) read as top-down. `BITMAP.bmHeight` is always positive and cannot report it; `DIBSECTION.dsBmih.biHeight` can (D-049) |
 | I.7 | Fixed | **PASS** | re-captured and magnified: the folder now matches ground truth — tab top-left, blue band bottom |
 | I.8 | Why D-046 was not enough | explained | the plates were a real problem and are still gone, but the Start button and Recycle Bin are our own SVGs, so they never looked wrong and masked the pattern |
+
+## Bluetooth device list (2026-11-01)
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| T.1 | Enumeration finds the paired devices | **PASS** | **4 found**, matching the four distinct audio devices Windows has paired (Windows' PnP list also shows their AVRCP child nodes; those are correctly not listed) |
+| T.2 | Device class decoding | PASS | `device_class_decoding` pins real values from the assigned-numbers table — audio, phone, computer, keyboard, mouse, other |
+| T.3 | Connected sorts above paired | PASS | asserted in `enumerating_devices_is_safe` |
+| T.4 | No radio / nothing paired | PASS (by construction) | both come back empty rather than erroring |
+| T.5 | No air scan | PASS | `fIssueInquiry: false`; reads the paired list, does not scan |
+| T.6 | Connecting | **deliberately not offered** | per-profile and class-specific; a device opens Windows' page instead (D-050) |
+| T.7 | Device names rendered safely | PASS | `textContent` — a device name is whatever its owner typed into it |
+
+## Dock search (2026-11-01)
+
+| # | Test | Result | Notes |
+|---|---|---|---|
+| S.1 | The bar expands into a search panel | **PASS** | verified by screenshot: icons and tray step aside, field and results take their place in the same window |
+| S.2 | Typing works at all | **PASS** | needed `WS_EX_NOACTIVATE` dropped while open; log shows `dock search focus -> true` |
+| S.3 | App results with real icons | PASS | typed "note" → Notepad, Git Release Notes, Jupyter Notebook, OneNote 2016, Release Notes, Sticky Notes |
+| S.4 | Prefix matches sort first | PASS | Notepad ahead of Jupyter Notebook |
+| S.5 | File results with paths | PASS | `FS_GenAI_Viva_Notes.md` with its full path, below the apps |
+| S.6 | Arrow keys and Enter | implemented, **not exercised** | the selection highlight is visible on the first row |
+| S.7 | Escape closes and returns focus | PASS | focus handed back to the previously foreground window |
+| S.8 | A slow search cannot overwrite a newer one | PASS (by construction) | sequence number guard |

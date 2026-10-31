@@ -57,6 +57,25 @@
              element on purpose: the dock window is sized to its content, so the
              tray widens the window and needs no hit-test region of its own - which
              is what made the top bar take a second to appear (D-038). -->
+        <!-- Search turns the whole bar into a panel: the icons and tray step aside,
+             this takes their place, and the window grows to fit. -->
+        <div id="search-pane" class="search-pane" hidden>
+          <div class="search-row">
+            <span class="search-ico" id="ico-search-big" aria-hidden="true"></span>
+            <input
+              id="dock-search"
+              type="search"
+              class="dock-search"
+              placeholder="Search apps, files and folders"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="Search apps, files and folders"
+            />
+            <button id="search-close" class="search-close" type="button" aria-label="Close search">Esc</button>
+          </div>
+          <div class="search-results" id="search-results"></div>
+        </div>
+
         <div id="tray-sep" class="tray-sep" hidden></div>
         <div id="tray" class="tray" hidden>
           <button id="tray-shelf" class="tray-btn shelf-btn" type="button" aria-label="Shelf" hidden>
@@ -68,6 +87,9 @@
             <span class="tray-ico" id="ico-bt"></span>
             <span class="tray-ico" id="ico-vol"></span>
             <span class="tray-ico tray-batt" id="ico-batt"></span>
+          </button>
+          <button id="tray-search" class="tray-btn" type="button" aria-label="Search apps and files">
+            <span class="tray-ico" id="ico-search"></span>
           </button>
           <button id="tray-pin" class="tray-btn tray-pin" type="button" aria-label="Pin the dock">
             <span class="tray-ico" id="ico-pin"></span>

@@ -164,8 +164,13 @@ function buildTiles(): void {
       go.addEventListener("click", async (e) => {
         e.stopPropagation();
         if (t.id === "wifi") {
-          showWifi(true);
+          showSub("wifi");
           await renderWifi();
+          return;
+        }
+        if (t.id === "bluetooth") {
+          showSub("bt");
+          await renderBt();
           return;
         }
         await openPage(t.page!);
@@ -191,6 +196,72 @@ function paintTiles(): void {
   }
 }
 
+/* -------------------------------------------------------- Bluetooth list */
+
+interface BtDevice {
+  name: string;
+  connected: boolean;
+  kind: string;
+}
+
+const BT_ICON: Record<string, string> = {
+  audio: SVG(`<path d="M8 17.5v-5a4 4 0 0 1 8 0v5"/><rect x="4.5" y="12.5" width="3.5" height="6" rx="1.7"/><rect x="16" y="12.5" width="3.5" height="6" rx="1.7"/>`),
+  phone: SVG(`<rect x="7" y="2.5" width="10" height="19" rx="2.4"/><path d="M11 18.5h2"/>`),
+  keyboard: SVG(`<rect x="2.5" y="6.5" width="19" height="11" rx="2.2"/><path d="M6 10h.01M9.5 10h.01M13 10h.01M16.5 10h.01M8 14h8"/>`),
+  mouse: SVG(`<rect x="7" y="2.5" width="10" height="19" rx="5"/><path d="M12 6.5v3"/>`),
+  computer: SVG(`<rect x="2.5" y="4.5" width="19" height="12" rx="2"/><path d="M8 20h8"/>`),
+  other: SVG(`<path d="M7 7.5 17 16.5 12 21V3l5 4.5L7 16.5"/>`),
+};
+
+function showSub(which: "tiles" | "wifi" | "bt"): void {
+  $<HTMLElement>("tiles").hidden = which !== "tiles";
+  $<HTMLElement>("wifi-sub").hidden = which !== "wifi";
+  $<HTMLElement>("bt-sub").hidden = which !== "bt";
+  // The sliders and battery belong to the tile view, not to a sub-page.
+  for (const id of ["sliders-wrap", "batt-row"]) {
+    const el = document.getElementById(id);
+    if (el) (el as HTMLElement).style.display = which === "tiles" ? "" : "none";
+  }
+}
+
+async function renderBt(): Promise<void> {
+  const list = $("bt-list");
+  list.textContent = "Looking…";
+  const devices = await invoke<BtDevice[]>("cmd_bt_devices").catch(() => []);
+  list.textContent = "";
+
+  const note = $<HTMLElement>("bt-note");
+  note.hidden = false;
+
+  if (devices.length === 0) {
+    note.textContent =
+      "Nothing paired yet. Pairing happens in Windows' Bluetooth page — tap here to open it.";
+    const go = document.createElement("button");
+    go.type = "button";
+    go.className = "net";
+    go.innerHTML = `<span class="net-ico">${BT_ICON.other}</span><span class="net-name"><b>Add a device</b><span>Opens Windows Bluetooth</span></span>`;
+    go.addEventListener("click", () => void openPage("ms-settings:bluetooth"));
+    list.appendChild(go);
+    return;
+  }
+
+  for (const d of devices) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "net" + (d.connected ? " on" : "");
+    row.innerHTML = `
+      <span class="net-ico">${BT_ICON[d.kind] ?? BT_ICON.other}</span>
+      <span class="net-name"><b></b><span>${d.connected ? "Connected" : "Paired"}</span></span>`;
+    // textContent: a device name is whatever its owner typed into it.
+    row.querySelector("b")!.textContent = d.name;
+    // Connecting is per-profile and class-specific; Windows' page knows each
+    // device's profiles and we do not. See D-050.
+    row.addEventListener("click", () => void openPage("ms-settings:bluetooth"));
+    list.appendChild(row);
+  }
+  note.textContent = "Connecting and pairing happen in Windows' Bluetooth page — tap a device to open it there.";
+}
+
 /* ------------------------------------------------------------ Wi-Fi list */
 
 interface WifiNetwork {
@@ -214,16 +285,6 @@ function bars(signal: number): string {
       arc("M8.5 15.3a6 6 0 0 1 7 0", 1) +
       `<circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/>`,
   );
-}
-
-function showWifi(on: boolean): void {
-  $<HTMLElement>("wifi-sub").hidden = !on;
-  $<HTMLElement>("tiles").hidden = on;
-  // The sliders and battery belong to the tile view, not to a sub-page.
-  for (const id of ["sliders-wrap", "batt-row"]) {
-    const el = document.getElementById(id);
-    if (el) (el as HTMLElement).style.display = on ? "none" : "";
-  }
 }
 
 async function renderWifi(): Promise<void> {
@@ -521,7 +582,8 @@ async function main(): Promise<void> {
     });
   } else {
     $("quick").hidden = false;
-    $("wifi-back").addEventListener("click", () => showWifi(false));
+    $("wifi-back").addEventListener("click", () => showSub("tiles"));
+    $("bt-back").addEventListener("click", () => showSub("tiles"));
     buildTiles();
     wireVolume();
     await Promise.all([refreshRadios(), refreshStatus(), wireBrightness()]);
