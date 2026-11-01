@@ -698,3 +698,11 @@ working code on it.
 | C.4 | Esc, release Alt | PASS: switcher gone, focus unchanged |
 | C.5 | Dock after reinstall | PASS: back at the bottom edge (`dockEdge: "bottom"`) |
 | C.6 | Installed build relaunched outside the editor; Startup shortcut still points at it | PASS |
+
+## Three-finger swipe (2026-11-01) — D-061
+
+| # | Test | Result |
+|---|------|--------|
+| T.1 | Raw input registered on startup | PASS: log "touchpad: listening for three-finger swipes" |
+| T.2 | Windows' swipe taken, old value kept | PASS: `ThreeFingerSlideEnabled` absent → 0, `threeFingerSaved: -1` |
+| T.3 | Three-finger swipe opens and turns the carousel, lift commits | NOT RUN: needs a hand on the touchpad. The log records "three fingers down" and "three-finger swipe -> switcher" for each try |

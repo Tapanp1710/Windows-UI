@@ -120,6 +120,14 @@ run the installer at all — the `.exe` in `src-tauri/target/release` runs as it
 
 ---
 
+### The three-finger touchpad swipe (2026-11-01, D-061)
+
+| What | Where | Undo |
+|---|---|---|
+| Windows' own three-finger swipe set to "Nothing" while macui's carousel swipe is on | `HKCU\Software\Microsoft\Windows\CurrentVersion\PrecisionTouchPad\ThreeFingerSlideEnabled` (was not set on this machine) | Automatic on quit and Turn off; `restore-windows.ps1`; or Settings > Bluetooth & devices > Touchpad > Three-finger gestures > Swipes |
+
+---
+
 ## 4. Files created outside the project folder
 
 - `%LOCALAPPDATA%\macui-toolchain\dl\mingw.zip` — downloaded installer archive, safe to

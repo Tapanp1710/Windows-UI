@@ -35,6 +35,13 @@ pub struct Settings {
     /// Our Alt+Tab. Off hands the keystroke straight back to Windows: the hook stops
     /// swallowing Tab, so the native switcher appears exactly as it always did.
     pub switcher_enabled: bool,
+    /// Three-finger swipe on a precision touchpad opens the switcher too.
+    #[serde(default = "yes")]
+    pub touchpad_switch: bool,
+    /// Windows' own three-finger swipe setting from before we turned it off, so it
+    /// can be put back: -1 means it was not set. `None` means we have not touched it.
+    #[serde(default)]
+    pub three_finger_saved: Option<i64>,
     /// Our launcher on the Win key. Off means the Win key is never touched at all
     /// and Windows Start opens exactly as it always did.
     pub launcher_enabled: bool,
@@ -132,6 +139,8 @@ impl Default for Settings {
             island: true,
             shelf: Vec::new(),
             switcher_enabled: true,
+            touchpad_switch: true,
+            three_finger_saved: None,
             launcher_enabled: true,
             dock_always_visible: false,
             dock_edge: default_dock_edge(),
@@ -151,6 +160,10 @@ impl Default for Settings {
             original_wallpaper: None,
         }
     }
+}
+
+fn yes() -> bool {
+    true
 }
 
 fn default_dock_edge() -> String {

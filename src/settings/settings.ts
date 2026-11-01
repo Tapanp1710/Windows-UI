@@ -35,6 +35,7 @@ interface Settings {
   topbarAppPill: boolean;
   island: boolean;
   switcherEnabled: boolean;
+  touchpadSwitch: boolean;
   dockAlwaysVisible: boolean;
   dockEdge: string;
   dockIconSize: number;
@@ -291,6 +292,7 @@ async function main(): Promise<void> {
   toggle("topbarAppPill", "topbarAppPill");
   toggle("island", "island");
   toggle("switcherEnabled", "switcherEnabled");
+  toggle("touchpadSwitch", "touchpadSwitch");
 
   slider("dockIconSize", "dockIconSize", (n) => `${n} px`);
   slider("animationSpeed", "animationSpeed", (n) => (n === 0 ? "off" : `${n}×`));

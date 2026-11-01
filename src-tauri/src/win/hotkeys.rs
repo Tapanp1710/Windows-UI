@@ -124,6 +124,19 @@ pub fn alt_held() -> bool {
     held(windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU.0 as i32)
 }
 
+/// Set while three fingers are on the touchpad holding the switcher open - the
+/// touchpad's equivalent of a held Alt (win/touchpad.rs).
+pub static GESTURE_HELD: AtomicBool = AtomicBool::new(false);
+
+/// Whether the switcher is being held open: Alt is down, or a three-finger swipe is
+/// still on the pad. A gesture that has gone quiet for a second no longer counts,
+/// so a lost "fingers lifted" report cannot leave the switcher on screen.
+pub fn switch_held() -> bool {
+    alt_held()
+        || (GESTURE_HELD.load(Ordering::SeqCst)
+            && now_ms().saturating_sub(crate::win::touchpad::LAST_FRAME_MS.load(Ordering::Relaxed)) < 1000)
+}
+
 /// Let the Win key up **without** opening Start.
 ///
 /// Start opens on the Win key's release, and only when nothing was pressed during
@@ -307,6 +320,11 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
     CallNextHookEx(None, code, wparam, lparam)
 }
 
+/// For the touchpad, which drives the switcher through the same channel.
+pub fn send_key(key: Key) {
+    send(key);
+}
+
 fn send(key: Key) {
     if let Some(tx) = TX.get() {
         // try_send semantics: a full or disconnected channel must never block the
@@ -382,7 +400,7 @@ fn reinstall() {
     crate::logln!("keyboard hook reinstalled -> {ok}");
 }
 
-fn now_ms() -> u64 {
+pub fn now_ms() -> u64 {
     static T0: OnceLock<std::time::Instant> = OnceLock::new();
     T0.get_or_init(std::time::Instant::now).elapsed().as_millis() as u64
 }

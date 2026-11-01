@@ -1343,3 +1343,42 @@ density the title sat on whatever was behind it.
 height. It is now sized from the screen: half the screen's height across, capped
 by the 760px window. The ring, the icons and the preview hole are all derived from
 that diameter in `layoutFor`. Measured: 540 physical px on a 1080px-tall screen.
+
+## D-061 — Three-finger swipe drives the carousel (2026-11-01)
+
+**The gesture:** three fingers on the touchpad, slide sideways, and the Alt+Tab
+carousel opens. Further sliding turns it one window per 8.5% of the pad's width
+(right = next, left = back). Lifting the fingers switches, as letting go of Alt does.
+
+**Why a touchpad reader, not keystrokes:** a 45-second key log taken while the
+gesture was meant to be used recorded nothing, so it was not safe to assume that
+Windows' swipe arrives as Alt+Tab keystrokes the hook could catch. `win/touchpad.rs`
+reads the touchpad directly instead:
+- A message-only window registers for raw input from the Precision Touchpad
+  collection (0x0D/0x05) with RIDEV_INPUTSINK, so reports arrive in the background.
+- Contacts are decoded with HidP_* from the device's preparsed data. Hybrid-mode
+  pads send one finger per report, so contacts are gathered until the frame's
+  contact count is reached.
+- It is a read: nobody's input path changes, and the pointer and scrolling are
+  untouched.
+
+**Holding the carousel open:** the touchpad sets `GESTURE_HELD`, the equivalent
+of a held Alt, and the switcher waits on `switch_held()` (Alt *or* gesture). A
+gesture that has sent nothing for a second stops counting, so a lost "lifted"
+report cannot strand the carousel.
+
+**Windows' own three-finger swipe** ("Switch apps") is on the same gesture, so
+two switchers would answer one swipe.
+- **While this is on:** `ThreeFingerSlideEnabled` under
+  HKCU\...\PrecisionTouchPad is set to 0 ("Nothing"). Before that, its old value is
+  written to `settings.json` (`threeFingerSaved`, -1 = was not set).
+- **Putting it back:** `restore_windows_state` restores it on quit, Turn off, a
+  panic, and switching the feature off. `restore-windows.ps1` restores it too.
+- **Policy:** this is the project's first registry write. It is per-user and needs
+  no admin, it is in SYSTEM_CHANGES.md, and it was made only because the request
+  cannot work without it.
+- **Unverified:** whether Windows applies the value without a sign-out has not
+  been confirmed (a WM_SETTINGCHANGE is broadcast).
+
+Settings > "Three-finger swipe on the touchpad opens it" switches the whole thing
+off, and gives Windows its swipe back.

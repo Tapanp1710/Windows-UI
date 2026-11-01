@@ -64,6 +64,11 @@ features = [
   "Win32_System_Rpc",
   "Win32_System_SystemInformation",
   "Win32_Graphics_Dwm",
+  # Three-finger swipe: raw input from the precision touchpad, and its HID reports.
+  "Win32_UI_Input",
+  "Win32_Devices_HumanInterfaceDevice",
+  # Windows' own three-finger swipe setting, turned off while ours is on.
+  "Win32_System_Registry",
   "Win32_System_Ole",
   "Win32_System_SystemServices",
   "Win32_UI_Shell_Common",

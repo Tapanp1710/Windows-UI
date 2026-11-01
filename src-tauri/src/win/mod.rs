@@ -18,6 +18,7 @@ pub mod wifi;
 pub mod status;
 pub mod sysinfo;
 pub mod taskbar;
+pub mod touchpad;
 
 use windows::Win32::Foundation::POINT;
 use windows::Win32::UI::HiDpi::{

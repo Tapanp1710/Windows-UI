@@ -90,6 +90,8 @@ fn restore_windows_state() {
     // anything else about the shutdown can go wrong.
     win::hotkeys::uninstall();
     win::dwm::clear();
+    // Windows' own three-finger swipe, if we took it.
+    win::touchpad::release_windows_swipe();
     if let Some(flag) = AUTOHIDE_RUNNING.lock().unwrap().take() {
         flag.store(false, Ordering::SeqCst);
     }
@@ -274,6 +276,8 @@ fn main() {
             win::status::start();
             win::brightness::start();
             switcher::start(app.handle().clone());
+            // Three-finger swipe drives the same switcher (win/touchpad.rs).
+            win::touchpad::start();
             launcher::warm_up();
             AUTOHIDE_RUNNING
                 .lock()
@@ -1555,6 +1559,13 @@ fn apply_settings(app: &tauri::AppHandle, initial: bool) {
     }
     autohide::TOPBAR_AUTO_HIDE.store(s.topbar_auto_hide, Ordering::SeqCst);
     win::hotkeys::ENABLED.store(s.switcher_enabled, Ordering::SeqCst);
+    let swipe = s.switcher_enabled && s.touchpad_switch;
+    win::touchpad::ENABLED.store(swipe, Ordering::SeqCst);
+    if swipe {
+        win::touchpad::claim_windows_swipe();
+    } else {
+        win::touchpad::release_windows_swipe();
+    }
     win::hotkeys::LAUNCHER_ENABLED.store(s.launcher_enabled, Ordering::SeqCst);
     // Read by `cmd_glass`, which runs on the main thread and so must not go to disk.
     win::acrylic::set_hue(s.glass_hue);

@@ -85,7 +85,8 @@ pub fn start(app: AppHandle) {
                 match rx.recv_timeout(ALT_POLL) {
                     Ok(k) => k,
                     Err(RecvTimeoutError::Timeout) => {
-                        if !win::hotkeys::alt_held() {
+                        if !win::hotkeys::switch_held() {
+                            win::hotkeys::GESTURE_HELD.store(false, Ordering::SeqCst);
                             crate::logln!("switcher: Alt is up without a release event; committing");
                             commit(&app);
                         }
@@ -176,7 +177,7 @@ fn advance(app: &AppHandle, backwards: bool) {
 
     // A quick tap - Alt already back up - is a straight swap, as in Windows: the
     // Commit is already queued behind this, so there is nothing to show.
-    if !win::hotkeys::alt_held() {
+    if !win::hotkeys::switch_held() {
         return;
     }
 
@@ -194,7 +195,7 @@ fn advance(app: &AppHandle, backwards: bool) {
         let done = lock.lock().unwrap();
         let _ = cv.wait_timeout_while(done, RENDER_WAIT, |r| *r < gen);
     }
-    if !win::hotkeys::alt_held() || GEN.load(Ordering::SeqCst) != gen {
+    if !win::hotkeys::switch_held() || GEN.load(Ordering::SeqCst) != gen {
         return;
     }
     let _ = w.show();

@@ -226,6 +226,29 @@ if (Test-Path $settingsFile) {
 }
 
 # ---------------------------------------------------------------------------
+# 4b. Give Windows its three-finger swipe back, if the app took it for the
+#     carousel. The old value is in settings.json; -1 means "was not set".
+# ---------------------------------------------------------------------------
+if (Test-Path $settingsFile) {
+    try {
+        $cfg = Get-Content $settingsFile -Raw -ErrorAction Stop | ConvertFrom-Json
+        if ($null -ne $cfg.threeFingerSaved) {
+            $ptp = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\PrecisionTouchPad'
+            if ([int64]$cfg.threeFingerSaved -lt 0) {
+                Remove-ItemProperty -Path $ptp -Name ThreeFingerSlideEnabled -ErrorAction SilentlyContinue
+            } else {
+                Set-ItemProperty -Path $ptp -Name ThreeFingerSlideEnabled -Type DWord -Value ([int]$cfg.threeFingerSaved)
+            }
+            $cfg.threeFingerSaved = $null
+            $cfg | ConvertTo-Json -Depth 8 | Set-Content $settingsFile -Encoding utf8
+            Note "three-finger touchpad swipe given back to Windows"
+        }
+    } catch {
+        Write-Warning "could not restore the three-finger swipe: $($_.Exception.Message)"
+    }
+}
+
+# ---------------------------------------------------------------------------
 # 5. Restart Explorer only if the taskbar window is genuinely gone.
 #    Explorer restarts itself and this loses nothing, but it reshuffles open
 #    File Explorer windows, so it is a last resort rather than routine.
