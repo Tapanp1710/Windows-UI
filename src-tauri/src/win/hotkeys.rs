@@ -320,6 +320,39 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
     CallNextHookEx(None, code, wparam, lparam)
 }
 
+/// Win+`vk` for the touchpad's up and down swipes (Task View, show desktop), the
+/// shortcuts for exactly what Windows' own swipes did. Tagged as ours, so the hook
+/// passes them through untouched and the guard does not take the Win press for a
+/// bare one: Windows sees an ordinary combination, and no Start opens.
+pub fn press_win_combo(vk: u16) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+        KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_LWIN,
+    };
+    let key = |vk: VIRTUAL_KEY, flags: KEYBD_EVENT_FLAGS| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: vk,
+                wScan: 0,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: INJECTED_BY_US,
+            },
+        },
+    };
+    LAST_INJECT_MS.store(now_ms(), Ordering::Relaxed);
+    let events = [
+        key(VK_LWIN, KEYBD_EVENT_FLAGS(0)),
+        key(VIRTUAL_KEY(vk), KEYBD_EVENT_FLAGS(0)),
+        key(VIRTUAL_KEY(vk), KEYEVENTF_KEYUP),
+        key(VK_LWIN, KEYEVENTF_KEYUP),
+    ];
+    unsafe {
+        SendInput(&events, std::mem::size_of::<INPUT>() as i32);
+    }
+}
+
 /// For the touchpad, which drives the switcher through the same channel.
 pub fn send_key(key: Key) {
     send(key);
@@ -493,6 +526,11 @@ pub fn start_guard() {
                 // if the hook saw this press it has already said so.
                 blind = !WIN_DOWN.load(Ordering::Relaxed);
                 used = false;
+                // Our own Win+Tab / Win+D from the touchpad: not a press to handle.
+                if now_ms().saturating_sub(LAST_INJECT_MS.load(Ordering::Relaxed)) < 200 {
+                    blind = false;
+                    used = true;
+                }
                 was_open_at_press = LAUNCHER_OPEN.load(Ordering::SeqCst);
                 if blind && enabled {
                     mask_held_win();

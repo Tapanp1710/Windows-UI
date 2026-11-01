@@ -706,3 +706,11 @@ working code on it.
 | T.1 | Raw input registered on startup | PASS: log "touchpad: listening for three-finger swipes" |
 | T.2 | Windows' swipe taken, old value kept | PASS: `ThreeFingerSlideEnabled` absent → 0, `threeFingerSaved: -1` |
 | T.3 | Three-finger swipe opens and turns the carousel, lift commits | NOT RUN: needs a hand on the touchpad. The log records "three fingers down" and "three-finger swipe -> switcher" for each try |
+
+## Swipe up/down, notifications button (2026-11-01) — D-062
+
+| # | Test | Result |
+|---|------|--------|
+| N.1 | Bell in the dock's tray | PASS: opens Windows' notification centre with every notification listed |
+| N.2 | Three-finger swipe up / down | NOT RUN: needs a hand on the touchpad; logged as "swipe up -> Task View" / "swipe down -> desktop" |
+| N.3 | Do Not Disturb | Turned on by accident during testing (a test keystroke while the notification centre had focus on it), found in a screenshot, and turned back off |

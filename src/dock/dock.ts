@@ -726,6 +726,7 @@ const TRAY_ICON = {
   // Pinned: the pin is pushed in, upright. Unpinned: tilted, as if lifted out.
   widgets: SVG(`<rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.8"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="1.8"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.8"/><rect x="13" y="13" width="7.5" height="7.5" rx="1.8"/>`),
   search: SVG(`<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>`),
+  bell: SVG(`<path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 2h-14z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/>`),
   // A drop of colour: the glass tint.
   tint: SVG(`<path d="M12 3.5c3 3.6 5.5 6.9 5.5 10a5.5 5.5 0 0 1-11 0c0-3.1 2.5-6.4 5.5-10z"/><path d="M9.3 14.2a2.8 2.8 0 0 0 2.2 2.6"/>`),
   pin: SVG(`<path d="M12 16.5V21"/><path d="M8 4.5h8l-1 5 2.5 2.5v1.5H6.5V12L9 9.5z"/>`),
@@ -1002,6 +1003,8 @@ function wireSearch(): void {
   $search("tray-tint").addEventListener("click", (e) =>
     openPanelAbove("tint", e.currentTarget as HTMLElement, 320, 236),
   );
+  $search("ico-bell").innerHTML = TRAY_ICON.bell;
+  $search("tray-bell").addEventListener("click", () => void invoke("cmd_open_notifications"));
   $search("ico-widgets").innerHTML = TRAY_ICON.widgets;
   $search("tray-widgets").addEventListener("click", (e) =>
     openPanelAbove("widgets", e.currentTarget as HTMLElement, 300, 290),

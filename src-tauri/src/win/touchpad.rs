@@ -4,6 +4,11 @@
 //! one window per stretch of travel (right = next, left = back); lift the fingers
 //! and you switch, exactly as letting go of Alt does.
 //!
+//! Up and down keep doing what Windows does with them - Task View and show the
+//! desktop. Windows' "Swipes" setting is one switch for all four directions, so
+//! taking sideways means taking up and down too; they are handed back here as the
+//! keyboard shortcuts for the same two things (Win+Tab, Win+D).
+//!
 //! The touchpad is read through raw input: a message-only window registers for the
 //! Precision Touchpad HID collection (Digitizer page 0x0D, usage 0x05) with
 //! RIDEV_INPUTSINK, so the reports arrive whichever window has focus. That is a
@@ -41,11 +46,15 @@ pub static ENABLED: AtomicBool = AtomicBool::new(true);
 
 /// Sideways travel, as a share of the pad's width, that turns the carousel by one.
 const STEP: f32 = 0.085;
+/// Vertical travel, as a share of the pad's height, that counts as a swipe up or
+/// down. Taller than STEP: a pad is shorter than it is wide.
+const VSTEP: f32 = 0.16;
 
 struct Device {
     preparsed: Vec<u8>,
-    /// Link collections that carry a contact's X, with that axis's logical range.
-    contacts: Vec<(u16, i32, i32)>,
+    /// Link collections that carry a contact's X, with that axis's logical range,
+    /// and the Y range for the same collection.
+    contacts: Vec<(u16, i32, i32, i32, i32)>,
 }
 
 impl Device {
@@ -77,18 +86,30 @@ fn load_device(handle: HANDLE) -> Option<Device> {
         if HidP_GetValueCaps(HidP_Input, values.as_mut_ptr(), &mut n, pp) != HIDP_STATUS_SUCCESS {
             return None;
         }
-        let contacts = values[..n as usize]
+        let values = &values[..n as usize];
+        let axis = |link: u16, usage: u16| {
+            values.iter().find(|v| {
+                v.UsagePage == 0x01
+                    && v.LinkCollection == link
+                    && !v.IsRange.as_bool()
+                    && v.Anonymous.NotRange.Usage == usage
+            })
+        };
+        let contacts = values
             .iter()
             .filter(|v| v.UsagePage == 0x01 && !v.IsRange.as_bool() && v.Anonymous.NotRange.Usage == 0x30)
-            .map(|v| (v.LinkCollection, v.LogicalMin, v.LogicalMax))
+            .map(|v| {
+                let (ymin, ymax) = axis(v.LinkCollection, 0x31).map_or((0, 1), |y| (y.LogicalMin, y.LogicalMax));
+                (v.LinkCollection, v.LogicalMin, v.LogicalMax, ymin, ymax)
+            })
             .collect();
         Some(Device { preparsed, contacts })
     }
 }
 
-/// One finger in one report: its id, X as a share of the pad's width, and whether
-/// it is touching.
-type Contact = (u32, f32, bool);
+/// One finger in one report: its id, X and Y as shares of the pad's width and
+/// height, and whether it is touching.
+type Contact = (u32, f32, f32, bool);
 
 fn parse(dev: &Device, report: &mut [u8]) -> (Option<u32>, Vec<Contact>) {
     let pp = dev.pp();
@@ -99,7 +120,7 @@ fn parse(dev: &Device, report: &mut [u8]) -> (Option<u32>, Vec<Contact>) {
         count = (HidP_GetUsageValue(HidP_Input, 0x0D, 0, 0x54, &mut n, pp, report)
             == HIDP_STATUS_SUCCESS)
             .then_some(n);
-        for &(link, min, max) in &dev.contacts {
+        for &(link, min, max, ymin, ymax) in &dev.contacts {
             let mut x = 0u32;
             if HidP_GetUsageValue(HidP_Input, 0x01, link, 0x30, &mut x, pp, report) != HIDP_STATUS_SUCCESS {
                 continue;
@@ -111,8 +132,11 @@ fn parse(dev: &Device, report: &mut [u8]) -> (Option<u32>, Vec<Contact>) {
             let tip = HidP_GetUsages(HidP_Input, 0x0D, link, usages.as_mut_ptr(), &mut len, pp, report)
                 == HIDP_STATUS_SUCCESS
                 && usages[..len as usize].contains(&0x42);
+            let mut y = 0u32;
+            let _ = HidP_GetUsageValue(HidP_Input, 0x01, link, 0x31, &mut y, pp, report);
             let span = (max - min).max(1) as f32;
-            out.push((id, (x as i32 - min) as f32 / span, tip));
+            let yspan = (ymax - ymin).max(1) as f32;
+            out.push((id, (x as i32 - min) as f32 / span, (y as i32 - ymin) as f32 / yspan, tip));
         }
     }
     (count, out)
@@ -127,21 +151,51 @@ pub static LAST_FRAME_MS: AtomicU64 = AtomicU64::new(0);
 struct Gesture {
     active: bool,
     opened: bool,
+    /// An up or down swipe already fired; nothing more until the fingers lift.
+    vertical: bool,
     anchor: f32,
+    start_x: f32,
+    start_y: f32,
 }
 
 impl Gesture {
     fn frame(&mut self, contacts: &[Contact]) {
-        let down: Vec<f32> = contacts.iter().filter(|c| c.2).map(|c| c.1).collect();
+        let down: Vec<(f32, f32)> = contacts.iter().filter(|c| c.3).map(|c| (c.1, c.2)).collect();
         if down.len() >= 3 && ENABLED.load(Ordering::Relaxed) {
-            let mean = down.iter().sum::<f32>() / down.len() as f32;
+            let k = down.len() as f32;
+            let mean = down.iter().map(|d| d.0).sum::<f32>() / k;
+            let mean_y = down.iter().map(|d| d.1).sum::<f32>() / k;
             if !self.active {
                 crate::logln!("touchpad: three fingers down");
-                *self = Gesture { active: true, opened: false, anchor: mean };
+                *self = Gesture {
+                    active: true,
+                    anchor: mean,
+                    start_x: mean,
+                    start_y: mean_y,
+                    ..Gesture::default()
+                };
+                return;
+            }
+            if self.vertical {
+                return;
+            }
+            // Up or down, if the fingers have travelled further that way than
+            // sideways and the carousel is not already open.
+            let dy = mean_y - self.start_y;
+            if !self.opened && dy.abs() >= VSTEP && dy.abs() > (mean - self.start_x).abs() * 1.2 {
+                self.vertical = true;
+                if dy < 0.0 {
+                    crate::logln!("touchpad: three-finger swipe up -> Task View");
+                    hotkeys::press_win_combo(0x09);
+                } else {
+                    crate::logln!("touchpad: three-finger swipe down -> desktop");
+                    hotkeys::press_win_combo(0x44);
+                }
                 return;
             }
             let dx = mean - self.anchor;
-            if dx.abs() >= STEP {
+            // A mostly vertical movement is not a sideways swipe yet.
+            if dx.abs() >= STEP && (self.opened || dx.abs() >= dy.abs()) {
                 let back = dx < 0.0;
                 if !self.opened {
                     self.opened = true;

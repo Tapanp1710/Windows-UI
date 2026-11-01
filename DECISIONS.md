@@ -1393,3 +1393,23 @@ off, and gives Windows its swipe back.
   macui re-hid the taskbar within the second.
 - **The same applies the other way:** after Turn off or switching the feature
   off, Windows' own swipe returns at the next sign-in or Explorer restart.
+
+## D-062 — Three-finger up/down handed back; a notifications button (2026-11-01)
+
+**Up and down stopped working after D-061.** Windows' "Swipes" setting is one
+switch for all four three-finger directions, so taking sideways took Task View
+(up) and show desktop (down) with it. `win/touchpad.rs` now handles those too:
+- **How a swipe is recognised:** contacts carry Y as well as X. A swipe of 16% of
+  the pad's height that is more vertical than sideways fires once per touch, and
+  only while the carousel is not open.
+- **What it sends:** Win+Tab for up, Win+D for down. These are the shortcuts for
+  exactly what Windows' own swipes did.
+- **No Start menu:** the keys are tagged as ours, so the hook passes them through.
+  The Win guard also ignores a Win press that starts within 200ms of one of our
+  injections, so it neither masks it nor takes it for a bare press.
+
+**Notifications:** a bell in the dock's tray opens Windows' own notification
+centre (Win+N). It lists every notification, with Clear all, Focus and the
+calendar. It is opened rather than redrawn: reading notifications ourselves needs
+`UserNotificationListener`, which requires package identity this unpackaged app
+does not have. Verified that it opens with the taskbar hidden.
