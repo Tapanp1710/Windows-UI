@@ -1142,3 +1142,118 @@ maths (`device_class_decoding`).
 Anything that can only be checked by clicking at a guessed coordinate should be
 handed to the user to look at, with what to look for stated plainly, rather than
 poked at until the screenshot looks right.
+
+---
+
+## D-056 — A lock held across its own release: the dock's "not responding" hang
+**Date:** 2026-11-01 · **Phase:** hangs
+
+The dock froze into a ghost "macui dock" window, and auto-hide stopped first. Both
+times it happened just after `panel dismissed: clicked outside`. GDB attached to the
+hung process (it ships with the MinGW toolchain) showed the main thread inside
+`DestroyWindow`, re-entered through a window procedure, parked in `WaitOnAddress`:
+blocked on a Rust `Mutex`.
+
+The mutex was `PANEL_RECT`. The auto-hide sampler read it as
+`if let Some(..) = *PANEL_RECT.lock().unwrap() { .. close_panel(..) }`. In edition
+2021 the guard in an `if let` scrutinee lives through the whole body, and
+`close_panel` locks `PANEL_RECT` again. A std `Mutex` is not re-entrant, so the
+sampler deadlocked on itself, still holding the lock. Auto-hide died with it (the dock
+stayed up). Then the panel's `Destroyed` handler on the main thread asked for the same
+lock and the whole app hung. **Every click-outside dismissal did this**, so it showed
+up as "intermittent" only because it needed a panel to be open first.
+
+**Decision:** copy the rect out on its own line so the guard drops before
+`close_panel`. Every other `if let`/`match` on a lock was checked, and none of them
+calls back into anything that takes the same lock.
+
+The rule, alongside D-054's: **never call out of a function while a guard from an
+`if let`, `while let` or `match` scrutinee is alive.** Copy the value out first.
+
+**Also changed while chasing it**, kept as hardening rather than as the fix:
+`cmd_dock_search_focus`, `cmd_dock_activate`, `cmd_focus_foreground`,
+`cmd_widget_restore_focus` and `cmd_switcher_pick` are async, because changing the
+foreground window waits on other threads. `apps::activate` and `apps::minimize` use
+`ShowWindowAsync`, because plain `ShowWindow` on another process's window waits for
+that process.
+
+**Found along the way:** releasing Alt in the switcher never switched between two
+app windows. Test 4.6 only switched away from the desktop, where there is no
+foreground lock. Between apps, Windows refused: Alt+Tab's keys went to the app you
+were in, not to us. On a refusal `activate` now sends one empty mouse input (no
+movement, no buttons) and tries again, which makes this process the last input
+source. No keyboard event is sent, so nothing can latch (D-044), and no
+`AttachThreadInput`.
+
+## D-057 — Alt+Tab that never let go, and a dock that labels as you move
+
+**The stuck switcher.** The hook only sent `Commit` on an Alt release while
+`SWITCHER_OPEN` was set, and that flag was set by the switcher thread *after* it had
+built the window list - which extracted and PNG-encoded a 256px icon per window on
+every press. Release Alt inside that window (any quick Alt+Tab) and the release was
+ignored; the switcher then appeared with Alt already up and stayed there.
+
+- The hook now marks the switcher open itself, the moment it swallows the Tab, and
+  clears it on the Alt release that sends `Commit` - one release, one commit.
+- While open, the switcher thread checks the physical Alt key every 40ms. Whatever
+  the hook misses (an elevated window took the key, Windows dropped the hook), a
+  switcher with Alt up commits instead of hanging around.
+- A tap is a straight swap: if Alt is already up when the list is built, nothing is
+  shown, as in Windows.
+- Icons are cached by executable and pre-warmed at startup.
+
+**Smoother.** The window is shown only after the page has laid out the new cards (or
+150ms), so an old opening never flashes. Nothing on the page moves with a transform
+any more: DWM places the previews at the cards' measured positions, and the old
+scale-in measured them mid-animation, leaving every preview a few pixels off its
+card. The bar fades instead, Rust fades the previews with it through the thumbnail
+opacity, and the selection is a highlight that glides between still cards. A
+generation number makes a late render, placement or fade from a closed opening a
+no-op.
+
+**Dock labels.** The 350ms delay was restarted by every pointermove, so a label
+appeared only once the pointer stopped dead. It now appears 80ms after reaching an
+icon, follows the pointer from icon to icon without fading out, survives the gap
+between icons, and sits at one height above the bar. The headroom it needs is
+granted as the pointer enters the bar, so the resize is done before the label is.
+
+**Dock search** shows apps only (word-start matches rank above substring ones). The
+launcher still searches files.
+
+## D-058 — Clear glass with one tint, and Start that closes on Start
+
+**Glass.** Surfaces are now see-through panes with a bright rim, an inner highlight
+and a soft sheen, and by default they have no colour: smoke in dark mode, frost in
+light. Every colour in `theme.css` is built from two variables, `--hue` and `--tint`
+(0 = clear, 1 = tinted), set on each window by `shared/tint.ts` from one setting,
+`glassHue`. The acrylic behind the launcher and the panels is tinted in
+`win/acrylic.rs` by the same rule, from a copy of the hue published by
+`apply_settings` so `cmd_glass` never reads the settings file on the main thread.
+A drop button in the dock's tray opens a picker: Clear, eleven hues and a slider for
+the whole wheel. Changes apply to every window live through `dock:prefs`.
+
+**The white frame** around the launcher and every panel was not acrylic this time
+(D-042/D-045 were). Measured: the launcher's window was 934x628 around a 920x620
+client. Tauri's `shadow: true` on an undecorated window keeps a 7px resize frame on
+three sides, and Windows paints that frame white. `shadow` is now off for the
+launcher, the panels and settings; DWM still rounds them.
+
+**Start opened behind the launcher.** With the launcher focused, the keyboard hook
+is not called at all - measured: no Win release reached it, and Alt+Tab brought up
+Windows' own switcher. Keys typed into one of our own windows never reach our own
+low-level hook. (A first theory, that hiding the launcher moved the foreground
+before the injected keys landed, was tested and was wrong; that code is gone.) So
+the launcher page handles Win itself: on keydown it asks Rust to inject a tagged
+Ctrl tap while Win is still held - which Windows counts as a combination, so the
+release does not open Start - and on keyup it closes. Nothing is swallowed; the
+real release goes through, so the modifier cannot latch (D-044). The dock's Start
+button already toggled correctly.
+
+**Panel reopen.** `close` on the old panel is asynchronous, so building the next one
+straight away could fail with "a webview with label `panel` already exists" and
+open nothing. `cmd_open_panel` now waits (up to 500ms, on its pool thread) for the
+old one to go.
+
+**Also:** a new Start glyph (four panes, the launcher's own shape) on a glass button
+that takes the tint; search is a field on the bar between the apps and the tray
+instead of an icon.

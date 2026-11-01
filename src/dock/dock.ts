@@ -16,6 +16,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import "../shared/theme.css";
+import { followTint } from "../shared/tint";
 import "./dock.css";
 
 /** Must match `.slider { padding }` in dock.css. */
@@ -76,9 +77,15 @@ const nodes = new Map<string, HTMLDivElement>();
 
 /* ------------------------------------------------------------------ render */
 
+/** Four panes, the launcher's own shape: what Start opens is a grid of apps. The
+ * panes fade slightly toward the corner, so the glyph has a light source like the
+ * glass it sits on. */
 const START_SVG = `
 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-  <circle cx="12" cy="12" r="9" fill="rgba(255,255,255,0.95)"/>
+  <rect x="4" y="4" width="7.2" height="7.2" rx="2.3" fill="#fff"/>
+  <rect x="12.8" y="4" width="7.2" height="7.2" rx="2.3" fill="#fff" fill-opacity="0.86"/>
+  <rect x="4" y="12.8" width="7.2" height="7.2" rx="2.3" fill="#fff" fill-opacity="0.86"/>
+  <rect x="12.8" y="12.8" width="7.2" height="7.2" rx="2.3" fill="#fff" fill-opacity="0.7"/>
 </svg>`;
 
 const RECYCLE_SVG = `
@@ -213,10 +220,15 @@ let lastSize = { w: 0, h: 0 };
 let headroom = 0;
 const TOOLTIP_HEADROOM = 46;
 
-function setHeadroom(px: number): void {
-  if (px === headroom) return;
+/** The resize for the current headroom, so a caller asking for the same amount
+ * still waits until it has actually happened. */
+let headroomReady: Promise<void> = Promise.resolve();
+
+function setHeadroom(px: number): Promise<void> {
+  if (px === headroom) return headroomReady;
   headroom = px;
-  void resizeWindowToContent();
+  headroomReady = resizeWindowToContent();
+  return headroomReady;
 }
 
 /**
@@ -273,35 +285,71 @@ function applyMagnification(hoverIndex: number | null): void {
 
 /* ------------------------------------------------------------- tooltip */
 
+/** Delay before the first label appears. Once one is up, moving to another icon
+ * retargets it at once, the way macOS does. */
+const TOOLTIP_DELAY = 80;
+/** Grace for crossing the gap between two icons without the label dropping. */
+const TOOLTIP_GRACE = 90;
+
 let tooltipTimer: number | undefined;
+let hideTimer: number | undefined;
+let tooltipFor: HTMLElement | null = null;
+
+function placeTooltip(el: HTMLElement, text: string): void {
+  tooltipEl.textContent = text;
+  // Centred on the icon, but at a fixed height above the bar: the hovered icon is
+  // still growing when this runs, so its own top is a moving target, and a label
+  // that keeps one height glides sideways instead of bobbing.
+  const r = el.getBoundingClientRect();
+  const d = dockEl.getBoundingClientRect();
+  const tw = tooltipEl.offsetWidth;
+  const x = Math.min(Math.max(4, r.left + r.width / 2 - tw / 2), window.innerWidth - tw - 4);
+  const y = Math.max(2, d.top - tooltipEl.offsetHeight - 6);
+  tooltipEl.style.translate = `${Math.round(x)}px ${Math.round(y)}px`;
+}
 
 function showTooltip(el: HTMLElement, text: string): void {
+  // Every pointermove lands here. Moving within the same icon must leave a pending
+  // label alone, or it never appears until the pointer stops dead.
+  window.clearTimeout(hideTimer);
+  if (tooltipFor === el) return;
   window.clearTimeout(tooltipTimer);
+  tooltipFor = el;
+
+  if (tooltipEl.classList.contains("show")) {
+    tooltipEl.classList.remove("instant");
+    placeTooltip(el, text);
+    return;
+  }
+
   tooltipTimer = window.setTimeout(async () => {
-    tooltipEl.textContent = text;
-    // Reserve the strip the tooltip will occupy, then let layout settle before
-    // measuring, or the tooltip lands at a stale position.
-    setHeadroom(Math.max(headroom, TOOLTIP_HEADROOM));
-    await new Promise(requestAnimationFrame);
+    // Normally already granted on entering the bar; awaited so the label is placed
+    // in the resized window, not the old one.
+    await setHeadroom(Math.max(headroom, TOOLTIP_HEADROOM));
+    if (tooltipFor !== el) return;
+    tooltipEl.classList.add("instant");
+    placeTooltip(el, text);
     tooltipEl.classList.add("show");
     tooltipEl.setAttribute("aria-hidden", "false");
-
-    const r = el.getBoundingClientRect();
-    const tw = tooltipEl.offsetWidth;
-    const x = Math.min(
-      Math.max(4, r.left + r.width / 2 - tw / 2),
-      window.innerWidth - tw - 4,
-    );
-    tooltipEl.style.left = `${Math.round(x)}px`;
-    tooltipEl.style.top = `${Math.round(r.top - tooltipEl.offsetHeight - 8)}px`;
-  }, 350);
+  }, TOOLTIP_DELAY);
 }
 
 function hideTooltip(): void {
   window.clearTimeout(tooltipTimer);
+  window.clearTimeout(hideTimer);
+  tooltipFor = null;
   tooltipEl.classList.remove("show");
   tooltipEl.setAttribute("aria-hidden", "true");
-  if (!menuEl.classList.contains("show")) setHeadroom(0);
+  if (!menuEl.classList.contains("show")) void setHeadroom(0);
+}
+
+/** Hide after a short grace, cancelled if the pointer reaches another icon. */
+function hideTooltipSoon(): void {
+  window.clearTimeout(tooltipTimer);
+  tooltipFor = null;
+  if (!tooltipEl.classList.contains("show")) return;
+  window.clearTimeout(hideTimer);
+  hideTimer = window.setTimeout(hideTooltip, TOOLTIP_GRACE);
 }
 
 /* ------------------------------------------------------------ popup menu */
@@ -312,7 +360,7 @@ function closeMenu(): void {
   if (!menuEl.classList.contains("show")) return;
   menuEl.classList.remove("show");
   menuEl.textContent = "";
-  setHeadroom(0);
+  void setHeadroom(0);
 }
 
 async function openMenu(anchor: HTMLElement, entries: MenuEntry[]): Promise<void> {
@@ -335,7 +383,7 @@ async function openMenu(anchor: HTMLElement, entries: MenuEntry[]): Promise<void
   // The icon sits SHADOW_PAD + the dock's own padding below the window top, so the
   // headroom has to cover the menu plus that offset. Measure after a frame so the
   // height reflects the real laid-out entries, not a pre-layout guess.
-  setHeadroom(menuEl.offsetHeight + SHADOW_PAD + 16);
+  void setHeadroom(menuEl.offsetHeight + SHADOW_PAD + 16);
   await resizeWindowToContent();
 
   const r = anchor.getBoundingClientRect();
@@ -368,7 +416,13 @@ itemsEl.addEventListener("pointermove", (e) => {
   const hit = itemFor(e.target);
   applyMagnification(hit ? items.indexOf(hit.item) : null);
   if (hit) showTooltip(hit.el, hit.item.name);
-  else hideTooltip();
+  else hideTooltipSoon();
+});
+
+// Make room for the label as the pointer arrives, so the resize is done by the
+// time the label is due. Given back on leave, by hideTooltip.
+itemsEl.addEventListener("pointerenter", () => {
+  void setHeadroom(Math.max(headroom, TOOLTIP_HEADROOM));
 });
 
 itemsEl.addEventListener("pointerleave", () => {
@@ -612,6 +666,8 @@ const TRAY_ICON = {
   // Pinned: the pin is pushed in, upright. Unpinned: tilted, as if lifted out.
   widgets: SVG(`<rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.8"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="1.8"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.8"/><rect x="13" y="13" width="7.5" height="7.5" rx="1.8"/>`),
   search: SVG(`<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>`),
+  // A drop of colour: the glass tint.
+  tint: SVG(`<path d="M12 3.5c3 3.6 5.5 6.9 5.5 10a5.5 5.5 0 0 1-11 0c0-3.1 2.5-6.4 5.5-10z"/><path d="M9.3 14.2a2.8 2.8 0 0 0 2.2 2.6"/>`),
   pin: SVG(`<path d="M12 16.5V21"/><path d="M8 4.5h8l-1 5 2.5 2.5v1.5H6.5V12L9 9.5z"/>`),
   pinOff: SVG(`<g transform="rotate(38 12 11)"><path d="M12 16.5V21"/><path d="M8 4.5h8l-1 5 2.5 2.5v1.5H6.5V12L9 9.5z"/></g>`),
 };
@@ -767,11 +823,6 @@ interface AppEntry {
   parsingName: string;
 }
 
-interface FileHit {
-  name: string;
-  path: string;
-  isDir: boolean;
-}
 
 type Hit = { name: string; sub: string; icon: string | null; run: () => void };
 
@@ -779,7 +830,6 @@ let searchOpen = false;
 let apps: AppEntry[] = [];
 let hits: Hit[] = [];
 let cursor = 0;
-let searchSeq = 0;
 
 async function setSearch(on: boolean): Promise<void> {
   if (on === searchOpen) return;
@@ -834,54 +884,50 @@ function paintHits(): void {
   void resizeWindowToContent();
 }
 
-async function runSearch(query: string): Promise<void> {
+/**
+ * Apps only. Files and folders are deliberately left out: the dock's search is a
+ * way to start something, and a page of documents pushed the app you wanted off
+ * the list. The launcher (Win key) still searches files.
+ */
+function runSearch(query: string): void {
   const q = query.trim().toLowerCase();
-  const seq = ++searchSeq;
   if (!q) {
     hits = [];
     paintHits();
     return;
   }
 
-  // Apps first and instantly: names that start with the query before names that
-  // merely contain it, which is the order that feels right when typing.
-  const appHits: Hit[] = apps
-    .filter((a) => a.name.toLowerCase().includes(q))
-    .sort((a, b) => {
-      const sa = a.name.toLowerCase().startsWith(q) ? 0 : 1;
-      const sb = b.name.toLowerCase().startsWith(q) ? 0 : 1;
-      return sa - sb || a.name.localeCompare(b.name);
-    })
-    .slice(0, 6)
-    .map((a) => ({
+  // Names that start with the query first, then names with a word that does
+  // ("code" finds "Visual Studio Code"), then names that merely contain it.
+  const rank = (name: string): number => {
+    const n = name.toLowerCase();
+    if (n.startsWith(q)) return 0;
+    if (n.split(/[\s\-_.]+/).some((w) => w.startsWith(q))) return 1;
+    return n.includes(q) ? 2 : 3;
+  };
+  hits = apps
+    .map((a) => ({ a, r: rank(a.name) }))
+    .filter((x) => x.r < 3)
+    .sort((x, y) => x.r - y.r || x.a.name.localeCompare(y.a.name))
+    .slice(0, 8)
+    .map(({ a }) => ({
       name: a.name,
       sub: "App",
       icon: a.icon,
       run: () => void invoke("cmd_launcher_open", { target: a.parsingName }),
     }));
-
-  hits = appHits;
   cursor = 0;
-  paintHits();
-
-  const files = await invoke<FileHit[]>("cmd_launcher_search", { query: q }).catch(() => []);
-  // A slower search that finished after a newer one must not overwrite it.
-  if (seq !== searchSeq) return;
-  hits = appHits.concat(
-    files.slice(0, 8).map((f) => ({
-      name: f.name,
-      sub: f.isDir ? "Folder" : f.path,
-      icon: null,
-      run: () => void invoke("cmd_launcher_open", { target: f.path }),
-    })),
-  );
   paintHits();
 }
 
 function wireSearch(): void {
-  $search("ico-search").innerHTML = TRAY_ICON.search;
+  $search("ico-searchbar").innerHTML = TRAY_ICON.search;
   $search("ico-search-big").innerHTML = TRAY_ICON.search;
-  $search("tray-search").addEventListener("click", () => void setSearch(true));
+  $search("searchbar").addEventListener("click", () => void setSearch(true));
+  $search("ico-tint").innerHTML = TRAY_ICON.tint;
+  $search("tray-tint").addEventListener("click", (e) =>
+    openPanelAbove("tint", e.currentTarget as HTMLElement, 320, 236),
+  );
   $search("ico-widgets").innerHTML = TRAY_ICON.widgets;
   $search("tray-widgets").addEventListener("click", (e) =>
     openPanelAbove("widgets", e.currentTarget as HTMLElement, 300, 290),
@@ -975,6 +1021,8 @@ function wireTray(): void {
 }
 
 async function main(): Promise<void> {
+  // Glass tint first, so nothing is drawn in the wrong colour.
+  await followTint();
   try {
     applyPrefs(await invoke<SystemPrefs>("cmd_system_prefs"));
   } catch {

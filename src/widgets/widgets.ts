@@ -17,6 +17,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "../shared/theme.css";
+import { followTint } from "../shared/tint";
 import "./widgets.css";
 
 type WidgetId = "clock" | "calendar" | "weather" | "media" | "stats";
@@ -435,6 +436,8 @@ async function refresh(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // Glass tint first, so nothing is drawn in the wrong colour.
+  await followTint();
   await loadConfig();
 
   renderClock();

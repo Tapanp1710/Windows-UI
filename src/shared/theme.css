@@ -5,11 +5,11 @@
  * corner. Light and dark both follow the Windows setting via prefers-color-scheme;
  * a `data-theme` attribute on <html> lets settings force one.
  *
- * The palette runs white to dark blue. Light mode is a cool near-white that keeps a
- * trace of blue so it sits with the accent rather than against it; dark mode is a
- * deep navy rather than a neutral grey, so the two ends are the same hue family at
- * different lightness. Accent is the one saturated colour, used for state - a switch
- * that is on, the selected tile, today's date - and for nothing decorative.
+ * Glass. Surfaces are see-through panes with a bright rim and a soft sheen, and
+ * by default they have no colour at all: smoke in dark mode, frost in light. The
+ * user can tint everything with one hue from the dock's tray (--hue / --tint
+ * below). Accent is the one strong colour, used for state - a switch that is on,
+ * the selected tile, today's date - and for nothing decorative.
  *
  * Nothing outside this file should name a colour. --accent-soft and --accent-wash are
  * here because selections used to hard-code the accent at an opacity in four separate
@@ -49,10 +49,23 @@
   --fs-small: 12px;
   --fs-label: 14px;
 
+  /* --- glass tint -----------------------------------------------------------
+   * Every colour below is built from these two, set on <html> by shared/tint.ts
+   * from the `glassHue` setting. --tint is 0 for clear, colourless glass - smoke
+   * in dark mode, frost in light - and 1 for glass tinted with --hue. Change the
+   * setting and every surface follows; the acrylic behind the panels follows the
+   * same rule in win/acrylic.rs, the one other place a colour is defined. */
+  --hue: 220;
+  --tint: 0;
+
   /* --- light surfaces ------------------------------------------------------ */
-  --glass-bg: rgba(250, 252, 255, 0.88);
-  --glass-border: rgba(150, 175, 215, 0.38);
-  --glass-edge: rgba(22, 45, 86, 0.12);
+  --glass-bg: hsl(var(--hue) calc(var(--tint) * 45%) 97% / 0.52);
+  /* The rim catches light: a bright edge is what makes a translucent pane read as
+     glass rather than as a faded panel. */
+  --glass-border: hsl(0 0% 100% / 0.62);
+  --glass-edge: hsl(var(--hue) calc(var(--tint) * 40%) 20% / 0.10);
+  --glass-sheen: linear-gradient(180deg, hsl(0 0% 100% / 0.42), hsl(0 0% 100% / 0.06) 55%, hsl(0 0% 100% / 0));
+  --glass-highlight: inset 0 1px 0 hsl(0 0% 100% / 0.75);
   /* Every surface in this app lives inside a SetWindowRgn hit-test region, and a
      shadow wider than that region's margin gets clipped into a hard-edged slab.
      --shadow-reach is how far it can possibly extend (largest offset + largest
@@ -61,79 +74,103 @@
      one and change the other. */
   --shadow-reach: 18px;
   --glass-shadow:
-    0 1px 2px rgba(16, 32, 62, 0.12),
-    0 4px 14px rgba(16, 32, 62, 0.20);
+    0 1px 2px rgba(0, 0, 0, 0.10),
+    0 4px 14px rgba(0, 0, 0, 0.16);
 
-  --plate-bg: rgba(255, 255, 255, 0.72);
-  --plate-border: rgba(255, 255, 255, 0.88);
+  --plate-bg: hsl(0 0% 100% / 0.42);
+  --plate-border: hsl(0 0% 100% / 0.62);
 
-  --text: #16223c;
-  --text-dim: rgba(22, 34, 60, 0.58);
-  --accent: #2563c7;
+  --text: hsl(var(--hue) calc(var(--tint) * 35%) 12%);
+  --text-dim: hsl(var(--hue) calc(var(--tint) * 30%) 14% / 0.60);
+  /* Clear glass has no colour to lend, so its accent is graphite; tinted glass
+     takes the hue at full strength. */
+  --accent: hsl(var(--hue) calc(var(--tint) * 72%) calc(26% + var(--tint) * 18%));
   /* Translucent accent for a selected row, a pressed tile, a hover on a destructive
      control. Never restate the accent at an opacity outside this file. */
-  --accent-soft: rgba(37, 99, 199, 0.20);
-  --accent-wash: rgba(37, 99, 199, 0.10);
+  --accent-soft: hsl(var(--hue) calc(var(--tint) * 72%) calc(26% + var(--tint) * 18%) / 0.18);
+  --accent-wash: hsl(var(--hue) calc(var(--tint) * 72%) calc(26% + var(--tint) * 18%) / 0.09);
   --accent-text: #ffffff;
-  --running-dot: rgba(22, 34, 60, 0.55);
+  --running-dot: hsl(var(--hue) calc(var(--tint) * 35%) 12% / 0.55);
 
-  --tooltip-bg: rgba(248, 251, 255, 0.96);
-  --divider: rgba(22, 45, 86, 0.16);
+  --tooltip-bg: hsl(var(--hue) calc(var(--tint) * 40%) 98% / 0.86);
+  --divider: hsl(var(--hue) calc(var(--tint) * 30%) 15% / 0.14);
+
+  /* The Start button: graphite glass when clear, the accent when tinted. */
+  --start-bg: linear-gradient(
+    150deg,
+    hsl(var(--hue) calc(var(--tint) * 85%) calc(40% + var(--tint) * 26%) / 0.92),
+    hsl(var(--hue) calc(var(--tint) * 80%) calc(14% + var(--tint) * 26%) / 0.96)
+  );
 
   /* Opaque sibling of --glass-bg, for surfaces carrying a screenful of text.
      Real desktop blur is not available behind a transparent window (D-009), so a
      translucent panel shows whatever is underneath straight through its own words.
      Fine for the dock, which you glance at; not fine for a settings window. */
-  --surface-solid: #f7fafe;
+  --surface-solid: hsl(var(--hue) calc(var(--tint) * 30%) 97%);
 }
 
-/* Follow Windows' dark mode, unless settings forced light. */
+/* Dark glass. Defined once and applied two ways below: following Windows, or
+   forced by settings. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --glass-bg: rgba(16, 28, 54, 0.90);
-    --glass-border: rgba(190, 215, 255, 0.16);
-    --glass-edge: rgba(0, 0, 0, 0.35);
+    --glass-bg: hsl(var(--hue) calc(var(--tint) * 32%) 12% / 0.46);
+    --glass-border: hsl(0 0% 100% / 0.17);
+    --glass-edge: hsl(0 0% 0% / 0.30);
+    --glass-sheen: linear-gradient(180deg, hsl(0 0% 100% / 0.10), hsl(0 0% 100% / 0.02) 50%, hsl(0 0% 100% / 0));
+    --glass-highlight: inset 0 1px 0 hsl(0 0% 100% / 0.14);
     --glass-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.34),
-      0 4px 14px rgba(0, 0, 0, 0.42);
+      0 1px 2px rgba(0, 0, 0, 0.30),
+      0 4px 14px rgba(0, 0, 0, 0.36);
 
-    --plate-bg: rgba(190, 215, 255, 0.14);
-    --plate-border: rgba(190, 215, 255, 0.20);
+    --plate-bg: hsl(0 0% 100% / 0.10);
+    --plate-border: hsl(0 0% 100% / 0.16);
 
-    --text: #e8f0fc;
-    --text-dim: rgba(232, 240, 252, 0.60);
-    --accent: #5b9bff;
-    --accent-soft: rgba(91, 155, 255, 0.26);
-    --accent-wash: rgba(91, 155, 255, 0.14);
-    --accent-text: #0a1526;
-    --running-dot: rgba(232, 240, 252, 0.70);
+    --text: hsl(var(--hue) calc(var(--tint) * 30%) 96%);
+    --text-dim: hsl(var(--hue) calc(var(--tint) * 25%) 92% / 0.62);
+    --accent: hsl(var(--hue) calc(var(--tint) * 88%) calc(90% - var(--tint) * 24%));
+    --accent-soft: hsl(var(--hue) calc(var(--tint) * 88%) calc(90% - var(--tint) * 24%) / 0.22);
+    --accent-wash: hsl(var(--hue) calc(var(--tint) * 88%) calc(90% - var(--tint) * 24%) / 0.11);
+    --accent-text: hsl(var(--hue) calc(var(--tint) * 40%) 10%);
+    --running-dot: hsl(var(--hue) calc(var(--tint) * 30%) 96% / 0.70);
 
-    --tooltip-bg: rgba(18, 31, 58, 0.96);
-    --divider: rgba(190, 215, 255, 0.18);
-    --surface-solid: #0d1830;
+    --tooltip-bg: hsl(var(--hue) calc(var(--tint) * 30%) 13% / 0.86);
+    --divider: hsl(0 0% 100% / 0.14);
+    --start-bg: linear-gradient(
+      150deg,
+      hsl(var(--hue) calc(var(--tint) * 85%) calc(100% - var(--tint) * 34%) / calc(0.30 + var(--tint) * 0.62)),
+      hsl(var(--hue) calc(var(--tint) * 80%) calc(100% - var(--tint) * 58%) / calc(0.08 + var(--tint) * 0.86))
+    );
+    --surface-solid: hsl(var(--hue) calc(var(--tint) * 30%) 10%);
   }
 }
 
 /* Settings can force dark regardless of the Windows setting. */
 :root[data-theme="dark"] {
-  --glass-bg: rgba(16, 28, 54, 0.90);
-  --glass-border: rgba(190, 215, 255, 0.16);
-  --glass-edge: rgba(0, 0, 0, 0.35);
+  --glass-bg: hsl(var(--hue) calc(var(--tint) * 32%) 12% / 0.46);
+  --glass-border: hsl(0 0% 100% / 0.17);
+  --glass-edge: hsl(0 0% 0% / 0.30);
+  --glass-sheen: linear-gradient(180deg, hsl(0 0% 100% / 0.10), hsl(0 0% 100% / 0.02) 50%, hsl(0 0% 100% / 0));
+  --glass-highlight: inset 0 1px 0 hsl(0 0% 100% / 0.14);
   --glass-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.34),
-    0 4px 14px rgba(0, 0, 0, 0.42);
-  --plate-bg: rgba(190, 215, 255, 0.14);
-  --plate-border: rgba(190, 215, 255, 0.20);
-  --text: #e8f0fc;
-  --text-dim: rgba(232, 240, 252, 0.60);
-  --accent: #5b9bff;
-  --accent-soft: rgba(91, 155, 255, 0.26);
-  --accent-wash: rgba(91, 155, 255, 0.14);
-  --accent-text: #0a1526;
-  --running-dot: rgba(232, 240, 252, 0.70);
-  --tooltip-bg: rgba(18, 31, 58, 0.96);
-  --divider: rgba(190, 215, 255, 0.18);
-  --surface-solid: #0d1830;
+    0 1px 2px rgba(0, 0, 0, 0.30),
+    0 4px 14px rgba(0, 0, 0, 0.36);
+  --plate-bg: hsl(0 0% 100% / 0.10);
+  --plate-border: hsl(0 0% 100% / 0.16);
+  --text: hsl(var(--hue) calc(var(--tint) * 30%) 96%);
+  --text-dim: hsl(var(--hue) calc(var(--tint) * 25%) 92% / 0.62);
+  --accent: hsl(var(--hue) calc(var(--tint) * 88%) calc(90% - var(--tint) * 24%));
+  --accent-soft: hsl(var(--hue) calc(var(--tint) * 88%) calc(90% - var(--tint) * 24%) / 0.22);
+  --accent-wash: hsl(var(--hue) calc(var(--tint) * 88%) calc(90% - var(--tint) * 24%) / 0.11);
+  --accent-text: hsl(var(--hue) calc(var(--tint) * 40%) 10%);
+  --running-dot: hsl(var(--hue) calc(var(--tint) * 30%) 96% / 0.70);
+  --tooltip-bg: hsl(var(--hue) calc(var(--tint) * 30%) 13% / 0.86);
+  --divider: hsl(0 0% 100% / 0.14);
+  --start-bg: linear-gradient(
+    150deg,
+    hsl(var(--hue) calc(var(--tint) * 85%) calc(100% - var(--tint) * 34%) / calc(0.30 + var(--tint) * 0.62)),
+    hsl(var(--hue) calc(var(--tint) * 80%) calc(100% - var(--tint) * 58%) / calc(0.08 + var(--tint) * 0.86))
+  );
+  --surface-solid: hsl(var(--hue) calc(var(--tint) * 30%) 10%);
 }
 
 /* Windows "Show animations in Windows" off -> honour it everywhere at once. */
@@ -177,10 +214,10 @@ body {
 
 /* The shared "floating island" surface. */
 .glass {
-  background: var(--glass-bg);
+  background: var(--glass-sheen), var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-bar);
-  box-shadow: var(--glass-shadow);
+  box-shadow: var(--glass-highlight), var(--glass-shadow);
   /* Note: on a transparent Win32 window `backdrop-filter` blurs only what the PAGE
      draws behind the element, not the desktop, so it does almost nothing here. The
      surfaces therefore carry enough opacity to read cleanly on their own; the filter

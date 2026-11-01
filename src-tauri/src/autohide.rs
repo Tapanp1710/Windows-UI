@@ -141,7 +141,12 @@ pub fn start(app: AppHandle) -> Arc<AtomicBool> {
             // observed rather than delivered. GetAsyncKeyState is a read of the
             // current button state; it installs nothing and sees nothing but the
             // buttons' own up/down flags.
-            if let Some((l, t, r, b)) = *crate::PANEL_RECT.lock().unwrap() {
+            // Copied out on its own line so the guard drops here. Inside an `if let`
+            // scrutinee it would live through the body, and `close_panel` takes the
+            // same lock: this thread deadlocked on itself, and the main thread hung
+            // behind it in the panel's `Destroyed` handler (D-056).
+            let panel = *crate::PANEL_RECT.lock().unwrap();
+            if let Some((l, t, r, b)) = panel {
                 let outside = cx < l || cx >= r || cy < t || cy >= b;
                 if outside && crate::win::mouse_button_down() {
                     crate::logln!("panel dismissed: clicked outside");

@@ -14,6 +14,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "../shared/theme.css";
+import { followTint } from "../shared/tint";
 import "./launcher.css";
 
 interface App {
@@ -283,6 +284,8 @@ async function applyGlass(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // Glass tint first, so nothing is drawn in the wrong colour.
+  await followTint(() => void applyGlass());
   try {
     const p = await invoke<{ iconShape: string; theme: string }>("cmd_system_prefs");
     applyPrefs(p.iconShape, p.theme);
@@ -348,6 +351,24 @@ async function main(): Promise<void> {
       e.preventDefault();
       openRow(rows[selected]);
     } else if (e.key === "Escape") {
+      void invoke("cmd_launcher_close");
+    }
+  });
+
+  // Win while the launcher has focus closes it, as Start does. The keyboard hook
+  // never sees keys typed into one of our own windows, so this page handles it:
+  // mask the press while Win is still down so Windows does not open Start on the
+  // release, then close on the release (D-058).
+  let winDown = false;
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Meta" && !e.repeat) {
+      winDown = true;
+      void invoke("cmd_launcher_mask_win");
+    }
+  });
+  document.addEventListener("keyup", (e) => {
+    if (e.key === "Meta" && winDown) {
+      winDown = false;
       void invoke("cmd_launcher_close");
     }
   });

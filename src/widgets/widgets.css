@@ -29,8 +29,8 @@ body {
   /* A gentle lift so it is obvious which card you have hold of. */
   transform: scale(1.03);
   box-shadow:
-    0 2px 6px rgba(16, 32, 62, 0.18),
-    0 16px 40px rgba(16, 32, 62, 0.26);
+    0 2px 6px rgba(0, 0, 0, 0.18),
+    0 16px 40px rgba(0, 0, 0, 0.26);
 }
 
 .w .card {

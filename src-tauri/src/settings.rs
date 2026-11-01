@@ -47,6 +47,11 @@ pub struct Settings {
     pub theme: String,
     /// Multiplier on every animation duration. 1.0 = the designed timings.
     pub animation_speed: f64,
+    /// Hue (0-360) the glass is tinted with, or `None` for clear, colourless glass.
+    /// Every surface - the dock, the launcher, the panels, the acrylic behind them -
+    /// takes its colour from this one value. Chosen from the dock's tray.
+    #[serde(default)]
+    pub glass_hue: Option<f64>,
 
     /// Desktop widgets: master switch, then one entry per widget.
     pub widgets_enabled: bool,
@@ -130,6 +135,7 @@ impl Default for Settings {
             icon_shape: "circle".into(),
             theme: "auto".into(),
             animation_speed: 1.0,
+            glass_hue: None,
             widgets_enabled: true,
             widgets: std::collections::BTreeMap::new(),
             // Logged in DECISIONS (D-017): the brief says to default to a city in

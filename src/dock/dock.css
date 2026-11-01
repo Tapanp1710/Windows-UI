@@ -248,34 +248,111 @@
   background: var(--tooltip-bg);
   border: 1px solid var(--glass-border);
   border-radius: 8px;
-  box-shadow: 0 4px 14px rgba(16, 32, 62, 0.18);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
   backdrop-filter: blur(18px) saturate(160%);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
-  transform: translateY(4px);
+  /* Position is `translate` (set from dock.ts) and the pop-in is `transform`, so
+     gliding between icons and appearing animate independently. */
+  transform: translateY(3px) scale(0.96);
+  transform-origin: 50% 100%;
   transition:
-    opacity var(--t-fast) var(--ease-out),
-    transform var(--t-fast) var(--ease-out);
+    opacity calc(110ms * var(--anim-scale)) var(--ease-out),
+    transform calc(130ms * var(--anim-scale)) var(--ease-out),
+    translate calc(140ms * var(--anim-scale)) cubic-bezier(0.2, 0.9, 0.3, 1);
+  will-change: translate, transform, opacity;
+}
+
+/* First appearance: jump to the icon, then fade in place. */
+.tooltip.instant {
+  transition:
+    opacity calc(110ms * var(--anim-scale)) var(--ease-out),
+    transform calc(130ms * var(--anim-scale)) var(--ease-out);
 }
 
 .tooltip.show {
   opacity: 1;
-  transform: translateY(0);
+  transform: none;
 }
 
 /* --- Start button --------------------------------------------------------- */
 
+/* A glass button of its own: graphite or frosted when the glass is clear, the
+   accent when it is tinted (--start-bg in theme.css). The rim and the inner
+   highlight are what make it read as a pane rather than a flat disc. */
 .item.start .plate {
-  background: linear-gradient(145deg, #6aa8ff 0%, #2563c7 100%);
-  border-color: rgba(255, 255, 255, 0.55);
+  width: 88%;
+  height: 88%;
+  background: var(--start-bg);
+  border: 1px solid hsl(0 0% 100% / 0.38);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.45),
+    inset 0 -6px 12px hsl(0 0% 0% / 0.12),
+    0 3px 10px rgba(0, 0, 0, 0.22);
+  transition: filter var(--t-fast) var(--ease-out);
+}
+
+.item.start:hover .plate {
+  filter: brightness(1.12);
+}
+
+.item.start:active .plate {
+  filter: brightness(0.92);
 }
 
 .item.start svg {
-  width: 56%;
-  height: 56%;
+  width: 54%;
+  height: 54%;
   display: block;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25));
+}
+
+/* --- search field ---------------------------------------------------------- */
+
+.searchbar {
+  appearance: none;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 168px;
+  height: 36px;
+  margin: 0 2px 0 12px;
+  padding: 0 14px 0 11px;
+  border-radius: 999px;
+  border: 1px solid var(--plate-border);
+  background: var(--plate-bg);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.10);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--fs-bar);
+  cursor: text;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+}
+
+.searchbar:hover {
+  border-color: var(--accent-soft);
+  background: var(--accent-wash);
+  color: var(--text);
+}
+
+.searchbar-ico {
+  display: flex;
+}
+
+.searchbar-ico svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.dock.searching .searchbar {
+  display: none;
 }
 
 /* --- popup: right-click menu and the grouped-window chooser -------------- */
@@ -630,4 +707,10 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The field already has an Esc button; the browser's own clear button (a blue
+   cross that ignores the palette) would be a second one. */
+.dock-search::-webkit-search-cancel-button {
+  display: none;
 }

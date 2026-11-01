@@ -98,6 +98,11 @@ fn held(vk: i32) -> bool {
     unsafe { (GetAsyncKeyState(vk) as u16 & 0x8000) != 0 }
 }
 
+/// Whether either Alt key is physically down right now.
+pub fn alt_held() -> bool {
+    held(windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU.0 as i32)
+}
+
 /// Let the Win key up **without** opening Start.
 ///
 /// Start opens on the Win key's release, and only when nothing was pressed during
@@ -142,6 +147,37 @@ unsafe fn release_win_without_start(win_vk: u16) {
         key(VIRTUAL_KEY(win_vk), KEYEVENTF_KEYUP),
     ];
     SendInput(&events, std::mem::size_of::<INPUT>() as i32);
+}
+
+/// Make a Win press that is still held count as a combination, so its release
+/// does not open Start.
+///
+/// For the launcher's own page. While one of our windows has keyboard focus this
+/// hook is not called at all (measured: with the launcher focused, Windows' own
+/// Alt+Tab appeared and no Win release reached the hook), so the page sees the
+/// Win key instead and asks for this. A Ctrl tap while Win is down is exactly
+/// what Windows treats as "something else was pressed", and nothing is swallowed:
+/// the real Win release still goes through, so the modifier cannot latch (D-044).
+pub fn mask_held_win() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+        KEYEVENTF_KEYUP, VK_CONTROL,
+    };
+    let key = |flags: KEYBD_EVENT_FLAGS| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: VK_CONTROL,
+                wScan: 0,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: INJECTED_BY_US,
+            },
+        },
+    };
+    unsafe {
+        SendInput(&[key(KEYBD_EVENT_FLAGS(0)), key(KEYEVENTF_KEYUP)], std::mem::size_of::<INPUT>() as i32);
+    }
 }
 
 unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -219,6 +255,11 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
         let up = msg == WM_KEYUP || msg == WM_SYSKEYUP;
 
         if down && vk == VK_TAB.0 && held(VK_MENU.0 as i32) {
+            // Marked open here, in the hook, not when the switcher thread gets round
+            // to showing the window. Building the list takes a moment, and an Alt
+            // released inside it used to find the flag still false: no Commit was
+            // ever sent and the switcher stayed on screen with Alt up (D-057).
+            SWITCHER_OPEN.store(true, Ordering::SeqCst);
             send(Key::Switch(held(VK_SHIFT.0 as i32)));
             // Swallowed: this is the only keystroke this project takes away from
             // Windows, and only while Alt is physically down.
@@ -230,8 +271,10 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
                 send(Key::Cancel);
                 return LRESULT(1);
             }
-            if up && (vk == VK_LMENU.0 || vk == VK_RMENU.0) {
-                // Deliberately NOT swallowed - see the module comment.
+            if up && (vk == VK_LMENU.0 || vk == VK_RMENU.0 || vk == VK_MENU.0) {
+                // Deliberately NOT swallowed - see the module comment. Cleared here
+                // so a second Alt release cannot send a second Commit.
+                SWITCHER_OPEN.store(false, Ordering::SeqCst);
                 send(Key::Commit);
             }
         }

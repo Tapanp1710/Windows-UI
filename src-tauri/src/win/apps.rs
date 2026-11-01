@@ -16,7 +16,7 @@ use windows::Win32::System::Threading::{
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetAncestor, GetWindowLongPtrW, GetWindowRect, GetWindowTextLengthW,
     GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible,
-    PostMessageW, SendMessageTimeoutW, SetForegroundWindow, ShowWindow, GA_ROOTOWNER,
+    PostMessageW, SendMessageTimeoutW, SetForegroundWindow, ShowWindowAsync, GA_ROOTOWNER,
     GWL_EXSTYLE, GWL_STYLE, SMTO_ABORTIFHUNG, SW_MINIMIZE, SW_RESTORE, WM_CLOSE,
     WS_CHILD, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
@@ -227,16 +227,30 @@ pub fn foreground_window() -> Option<HWND> {
 /// the user, so Windows normally grants it, and the `AttachThreadInput` trick that
 /// some launchers use to force it is deliberately avoided here - it is exactly the
 /// kind of behaviour change this project promised not to introduce.
+///
+/// `ShowWindowAsync`, not `ShowWindow`: on another process's window the plain call
+/// waits for that process to answer, so one busy app could freeze the dock (D-056).
+///
+/// The lock does refuse the switcher: Alt+Tab's keys went to the app you were in,
+/// not to us. So on a refusal, send one empty mouse input - no movement, no buttons,
+/// nothing any app can see - which makes this process the last input source, and
+/// try once more. No keyboard state is touched (D-044).
 pub fn activate(hwnd_raw: isize) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_MOUSE};
+
     let hwnd = HWND(hwnd_raw as *mut _);
     unsafe {
         if !IsWindow(hwnd).as_bool() {
             return;
         }
         if IsIconic(hwnd).as_bool() {
-            let _ = ShowWindow(hwnd, SW_RESTORE);
+            let _ = ShowWindowAsync(hwnd, SW_RESTORE);
         }
-        let _ = SetForegroundWindow(hwnd);
+        if !SetForegroundWindow(hwnd).as_bool() {
+            let empty = INPUT { r#type: INPUT_MOUSE, ..Default::default() };
+            SendInput(&[empty], std::mem::size_of::<INPUT>() as i32);
+            let _ = SetForegroundWindow(hwnd);
+        }
     }
 }
 
@@ -245,7 +259,7 @@ pub fn minimize(hwnd_raw: isize) {
     let hwnd = HWND(hwnd_raw as *mut _);
     unsafe {
         if IsWindow(hwnd).as_bool() {
-            let _ = ShowWindow(hwnd, SW_MINIMIZE);
+            let _ = ShowWindowAsync(hwnd, SW_MINIMIZE);
         }
     }
 }

@@ -222,6 +222,7 @@ fn main() {
             cmd_launcher_open,
             cmd_launcher_reveal,
             cmd_launcher_close,
+            cmd_launcher_mask_win,
             cmd_launcher_power,
             cmd_shelf,
             cmd_shelf_add,
@@ -516,6 +517,16 @@ async fn cmd_open_panel(
     // One panel at a time: opening the calendar should dismiss quick settings, the
     // way one Windows flyout replaces another.
     close_panel(&app);
+    // `close` is asynchronous: the old window keeps its label until the event loop
+    // has destroyed it, and building a new "panel" before then fails outright. So
+    // switching straight from one flyout to another sometimes opened nothing. This
+    // runs on a pool thread, so waiting here never holds up the main thread.
+    for _ in 0..50 {
+        if app.get_webview_window("panel").is_none() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
 
     let (sw, sh) = win::taskbar::screen_size();
     let scale = app
@@ -546,7 +557,10 @@ async fn cmd_open_panel(
     .resizable(false)
     .decorations(false)
     .transparent(true)
-    .shadow(true)
+    // No Tauri shadow: on an undecorated window it keeps a 7px resize frame on
+    // three sides, and Windows paints that frame white - the white border around
+    // every panel and the launcher (D-058). DWM still rounds the window.
+    .shadow(false)
     .always_on_top(true)
     .skip_taskbar(true)
     // Never takes focus, so opening it does not interrupt whatever the user is
@@ -610,7 +624,7 @@ fn cmd_glass(window: tauri::Window, dark: bool) -> bool {
     };
     let hwnd = h.0 as isize;
     win::acrylic::round_corners(hwnd, win::acrylic::border_for(dark));
-    win::acrylic::enable(hwnd, win::acrylic::tint_for(dark))
+    win::acrylic::enable(hwnd, win::acrylic::tint_for(dark, win::acrylic::hue()))
 }
 
 #[tauri::command]
@@ -655,7 +669,7 @@ async fn cmd_set_volume(level: u8) -> bool {
 
 /// Re-assert focus on the foreground window. Harmless no-op when already focused.
 #[tauri::command]
-fn cmd_focus_foreground() {
+async fn cmd_focus_foreground() {
     if let Some(h) = win::apps::foreground_window() {
         win::apps::activate(h.0 as isize);
     }
@@ -790,6 +804,8 @@ struct SystemPrefs {
     topbar_auto_hide: bool,
     topbar_app_pill: bool,
     island: bool,
+    /// The glass tint's hue, or null for clear glass. See `Settings::glass_hue`.
+    glass_hue: Option<f64>,
     /// Whether the top bar is switched on at all. The page reads this before
     /// showing itself: Rust hides the window at startup when it is off, but the
     /// page's own `show()` runs afterwards and would put it straight back.
@@ -811,6 +827,7 @@ async fn cmd_system_prefs() -> SystemPrefs {
         topbar_auto_hide: s.topbar_auto_hide,
         topbar_app_pill: s.topbar_app_pill,
         island: s.island,
+        glass_hue: s.glass_hue,
         topbar_enabled: s.topbar_enabled,
     }
 }
@@ -829,7 +846,7 @@ async fn cmd_dock_items() -> Vec<dock_model::DockItem> {
 /// With several windows the frontend asks for a chooser instead, so this only ever
 /// receives a single concrete hwnd in that case.
 #[tauri::command]
-fn cmd_dock_activate(hwnd: isize) {
+async fn cmd_dock_activate(hwnd: isize) {
     let focused = win::apps::foreground_window().map(|h| h.0 as isize);
     if focused == Some(hwnd) {
         win::apps::minimize(hwnd);
@@ -1042,10 +1059,9 @@ fn open_settings(app: &tauri::AppHandle) -> tauri::Result<()> {
     .resizable(false)
     .decorations(false)
     .transparent(true)
-    // A real DWM drop shadow around the window's rounded region, rather than one
-    // painted inside the page: a painted shadow needs margin inside the window,
-    // and acrylic would fill that margin with glass.
-    .shadow(true)
+    // No Tauri shadow, for the same reason as the panels: it brings a white 7px
+    // frame with it (D-058).
+    .shadow(false)
     .center()
     .additional_browser_args(BROWSER_ARGS)
     .build()?;
@@ -1308,6 +1324,13 @@ fn cmd_launcher_reveal(app: tauri::AppHandle, path: String) -> bool {
     win::pins::reveal_in_explorer(std::path::Path::new(&path))
 }
 
+/// The launcher saw the Win key go down while it had focus: stop that press from
+/// opening Start when it is released. See `hotkeys::mask_held_win`.
+#[tauri::command]
+fn cmd_launcher_mask_win() {
+    win::hotkeys::mask_held_win();
+}
+
 #[tauri::command]
 fn cmd_launcher_close(app: tauri::AppHandle) {
     launcher::close(&app);
@@ -1325,10 +1348,10 @@ fn cmd_launcher_power(app: tauri::AppHandle, action: String) -> bool {
 /// The page reports these after layout, because only it knows where the cards are.
 /// They are in CSS pixels relative to the switcher window's client area.
 #[tauri::command]
-fn cmd_switcher_slots(window: tauri::Window, slots: Vec<SwitcherSlot>) -> tauri::Result<()> {
+fn cmd_switcher_slots(window: tauri::Window, slots: Vec<SwitcherSlot>, gen: u64) -> tauri::Result<()> {
     let scale = window.scale_factor().unwrap_or(1.0);
     let dest = window.hwnd()?.0 as isize;
-    switcher::place_thumbnails(dest, &slots, scale);
+    switcher::place_thumbnails(dest, &slots, scale, gen);
     Ok(())
 }
 
@@ -1344,7 +1367,7 @@ pub struct SwitcherSlot {
 
 /// A click on a card: switch to that window and close.
 #[tauri::command]
-fn cmd_switcher_pick(app: tauri::AppHandle, hwnd: isize) {
+async fn cmd_switcher_pick(app: tauri::AppHandle, hwnd: isize) {
     switcher::pick(&app, hwnd);
 }
 
@@ -1368,7 +1391,7 @@ fn cmd_media_control(action: String) {
 /// Called by the widget layer immediately after a click on one of its controls. A
 /// no-op if nothing was recorded, or if the recorded window has since closed.
 #[tauri::command]
-fn cmd_widget_restore_focus() {
+async fn cmd_widget_restore_focus() {
     let hwnd = LAST_FOREIGN_FOREGROUND.load(Ordering::SeqCst);
     if hwnd != 0 {
         win::apps::activate(hwnd);
@@ -1381,8 +1404,13 @@ fn cmd_widget_restore_focus() {
 /// what you are working in — which also means you cannot type into it. Search needs
 /// the opposite, so the style is dropped for as long as the field is open and put
 /// straight back when it closes, handing focus to whatever had it before.
+///
+/// Async (D-056): changing the foreground window waits on other threads and
+/// processes, and on the main thread that froze the dock as a ghost "not responding"
+/// window. From a pool thread the activation messages are simply queued to the main
+/// thread, which stays free to pump them.
 #[tauri::command]
-fn cmd_dock_search_focus(window: tauri::Window, on: bool) -> Result<(), String> {
+async fn cmd_dock_search_focus(window: tauri::Window, on: bool) -> Result<(), String> {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindowLongPtrW, SetForegroundWindow, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE,
@@ -1488,6 +1516,8 @@ fn apply_settings(app: &tauri::AppHandle, initial: bool) {
     autohide::TOPBAR_AUTO_HIDE.store(s.topbar_auto_hide, Ordering::SeqCst);
     win::hotkeys::ENABLED.store(s.switcher_enabled, Ordering::SeqCst);
     win::hotkeys::LAUNCHER_ENABLED.store(s.launcher_enabled, Ordering::SeqCst);
+    // Read by `cmd_glass`, which runs on the main thread and so must not go to disk.
+    win::acrylic::set_hue(s.glass_hue);
 
     for (label, enabled) in [("dock", s.dock_enabled), ("topbar", s.topbar_enabled)] {
         let Some(w) = app.get_webview_window(label) else {

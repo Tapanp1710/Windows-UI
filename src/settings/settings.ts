@@ -11,6 +11,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "../shared/theme.css";
+import { followTint } from "../shared/tint";
 import "./settings.css";
 
 type WidgetId = "clock" | "calendar" | "weather" | "media" | "stats";
@@ -267,6 +268,8 @@ function wireLeaving(): void {
 /* -------------------------------------------------------------- startup */
 
 async function main(): Promise<void> {
+  // Glass tint first, so nothing is drawn in the wrong colour.
+  await followTint(() => void applyGlass());
   const win = getCurrentWindow();
   $<HTMLButtonElement>("close").addEventListener("click", () => void win.close());
   document.addEventListener("keydown", (e) => {

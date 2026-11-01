@@ -101,6 +101,15 @@
       <p class="sub-note" id="widget-note">Turning one off keeps its position — switch it back on and it returns where it was.</p>
     </main>
 
+    <!-- The glass tint. One hue recolours every surface; "Clear" takes the colour
+         out entirely. Saved to settings, so it survives a restart. -->
+    <main id="tint" class="panel" hidden>
+      <h2 class="shelf-title">Glass tint</h2>
+      <div class="tint-grid" id="tint-grid" role="radiogroup" aria-label="Glass tint"></div>
+      <input type="range" id="tint-hue" class="tint-hue" min="0" max="359" step="1" aria-label="Hue" />
+      <p class="sub-note">Clear glass has no colour. A hue tints the dock, Start, the panels and the switcher together.</p>
+    </main>
+
     <main id="calendar" class="panel" hidden>
       <header class="cal-today">
         <div class="cal-dow" id="cal-dow"></div>

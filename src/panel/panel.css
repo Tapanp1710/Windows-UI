@@ -236,7 +236,7 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 50%;
   background: var(--accent);
   border: 2px solid var(--glass-bg);
-  box-shadow: 0 1px 2px rgba(16, 32, 62, 0.25);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 /* --- battery -------------------------------------------------------------- */
@@ -614,4 +614,66 @@ input[type="range"]::-webkit-slider-thumb {
 
 .sub-note[hidden] {
   display: none;
+}
+
+/* --- glass tint ------------------------------------------------------------ */
+
+.tint-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  margin: 0 2px;
+}
+
+.swatch {
+  appearance: none;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1px solid hsl(0 0% 100% / 0.45);
+  background: linear-gradient(
+    150deg,
+    hsl(var(--swatch-hue) 85% 72%),
+    hsl(var(--swatch-hue) 75% 45%)
+  );
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.5),
+    0 2px 6px rgba(0, 0, 0, 0.22);
+  cursor: default;
+  transition:
+    transform var(--t-fast) var(--ease-out),
+    box-shadow var(--t-fast) var(--ease-out);
+}
+
+/* Clear glass: a pane with nothing in it but a highlight. */
+.swatch.clear {
+  background:
+    linear-gradient(135deg, hsl(0 0% 100% / 0.55), hsl(0 0% 100% / 0.08) 60%),
+    hsl(0 0% 50% / 0.18);
+}
+
+.swatch:hover {
+  transform: scale(1.08);
+}
+
+.swatch.on {
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.5),
+    0 0 0 2px var(--surface-solid),
+    0 0 0 4px var(--text);
+}
+
+/* The fine control: the whole wheel on one track. */
+.tint-hue {
+  margin: 8px 4px 0;
+  height: 10px !important;
+  border-radius: 5px !important;
+  background: linear-gradient(
+    90deg,
+    hsl(0 80% 58%), hsl(60 80% 52%), hsl(120 70% 48%), hsl(180 75% 48%),
+    hsl(240 80% 62%), hsl(300 75% 58%), hsl(359 80% 58%)
+  ) !important;
+}
+
+.tint-hue.idle {
+  opacity: 0.55;
 }

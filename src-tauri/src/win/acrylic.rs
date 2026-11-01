@@ -97,18 +97,54 @@ pub fn disable(hwnd_raw: isize) {
     apply(hwnd_raw, ACCENT_DISABLED, 0);
 }
 
+/// The glass hue from settings, in tenths of a degree; -1 means clear glass.
+/// Published by `apply_settings` so `cmd_glass` never reads the settings file on
+/// the main thread.
+static HUE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(-1);
+
+pub fn set_hue(hue: Option<f64>) {
+    let v = hue.map(|h| (h.rem_euclid(360.0) * 10.0) as i32).unwrap_or(-1);
+    HUE.store(v, std::sync::atomic::Ordering::SeqCst);
+}
+
+pub fn hue() -> Option<f64> {
+    let v = HUE.load(std::sync::atomic::Ordering::SeqCst);
+    (v >= 0).then(|| v as f64 / 10.0)
+}
+
 /// The tint for the current theme, as the ABGR value `enable` wants.
 ///
-/// Warm, matching the project's palette: a light cream over the blur in light mode,
-/// a warm near-black in dark mode.
-pub fn tint_for(dark: bool) -> u32 {
-    if dark {
-        // 0xAABBGGRR — alpha 0xA8 over #0D1830, the dark end of the palette.
-        0xA8_30_18_0D
-    } else {
-        // alpha 0xB4 over #F7FAFE, the light end.
-        0xB4_FE_FA_F7
-    }
+/// The same rule as `theme.css`, the one other place colour lives: with no hue the
+/// glass is colourless - a graphite smoke in dark mode, a frost in light - and a hue
+/// tints it without changing how see-through it is. The alpha is deliberately low:
+/// the blur already makes text readable, and this is meant to look like glass.
+pub fn tint_for(dark: bool, hue: Option<f64>) -> u32 {
+    let (r, g, b) = match (hue, dark) {
+        (None, true) => (24, 24, 28),
+        (None, false) => (246, 246, 248),
+        (Some(h), true) => hsl_to_rgb(h, 0.35, 0.14),
+        (Some(h), false) => hsl_to_rgb(h, 0.45, 0.95),
+    };
+    let alpha: u32 = if dark { 0x8C } else { 0xA0 };
+    // 0xAABBGGRR
+    (alpha << 24) | ((b as u32) << 16) | ((g as u32) << 8) | r as u32
+}
+
+fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (u8, u8, u8) {
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let hp = h.rem_euclid(360.0) / 60.0;
+    let x = c * (1.0 - (hp % 2.0 - 1.0).abs());
+    let (r, g, b) = match hp as u32 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    let m = l - c / 2.0;
+    let to = |v: f64| ((v + m) * 255.0).round().clamp(0.0, 255.0) as u8;
+    (to(r), to(g), to(b))
 }
 
 /// Round a window's corners and give it a hairline border, at the DWM level.

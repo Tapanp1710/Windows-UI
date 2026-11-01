@@ -13,6 +13,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import "../shared/theme.css";
+import { applyTint, followTint } from "../shared/tint";
 import "./panel.css";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -595,9 +596,69 @@ async function renderWidgets(): Promise<void> {
   }
 }
 
+/* ------------------------------------------------------------------ tint */
+
+/** Clear, then a hue every 30-ish degrees around the wheel. */
+const TINT_PRESETS: (number | null)[] = [null, 0, 22, 42, 140, 172, 196, 214, 240, 266, 292, 326];
+
+async function renderTint(): Promise<void> {
+  const grid = $("tint-grid");
+  const slider = $("tint-hue") as HTMLInputElement;
+  let current = await invoke<{ glassHue: number | null }>("cmd_system_prefs")
+    .then((p) => p.glassHue)
+    .catch(() => null);
+
+  const paint = () => {
+    for (const b of grid.querySelectorAll<HTMLButtonElement>(".swatch")) {
+      const h = b.dataset.hue === "" ? null : Number(b.dataset.hue);
+      const on = h === current || (h !== null && current !== null && Math.abs(h - current) < 1);
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-checked", String(on));
+    }
+    slider.value = String(current ?? 214);
+    slider.classList.toggle("idle", current === null);
+  };
+
+  // Saving goes through settings, which tells every window - this one included -
+  // to recolour. The local apply is only so dragging feels immediate.
+  const save = (h: number | null) => {
+    current = h;
+    applyTint(h);
+    paint();
+    void invoke("cmd_patch_settings", { patch: { glassHue: h } });
+  };
+
+  grid.textContent = "";
+  for (const h of TINT_PRESETS) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "swatch" + (h === null ? " clear" : "");
+    b.dataset.hue = h === null ? "" : String(h);
+    b.setAttribute("role", "radio");
+    b.title = h === null ? "Clear" : `Hue ${h}`;
+    if (h !== null) b.style.setProperty("--swatch-hue", String(h));
+    b.addEventListener("click", () => save(h));
+    grid.appendChild(b);
+  }
+
+  let timer = 0;
+  slider.addEventListener("input", () => {
+    const h = Number(slider.value);
+    current = h;
+    applyTint(h);
+    paint();
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => save(h), 120);
+  });
+
+  paint();
+}
+
 /* -------------------------------------------------------------- startup */
 
 async function main(): Promise<void> {
+  // Glass tint first, so nothing is drawn in the wrong colour.
+  await followTint(() => void applyGlass());
   const kind = await invoke<string>("cmd_panel_kind").catch(() => "quick");
 
   // Every link opens the real Windows page for the thing we are not duplicating.
@@ -616,7 +677,10 @@ async function main(): Promise<void> {
 
   await applyGlass();
 
-  if (kind === "widgets") {
+  if (kind === "tint") {
+    $("tint").hidden = false;
+    await renderTint();
+  } else if (kind === "widgets") {
     $("widgets").hidden = false;
     await renderWidgets();
   } else if (kind === "shelf") {

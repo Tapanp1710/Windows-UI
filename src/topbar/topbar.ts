@@ -22,6 +22,7 @@ import {
 } from "./island";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "../shared/theme.css";
+import { followTint } from "../shared/tint";
 import "./topbar.css";
 
 const REFRESH_MS = 2000;
@@ -396,6 +397,8 @@ async function wireDrops(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // Glass tint first, so nothing is drawn in the wrong colour.
+  await followTint();
   // Everything this bar carried - network, Bluetooth, sound, battery, the clock and
   // the shelf - now lives in the dock's tray, so the bar is off by default. Bail out
   // before anything is wired: the window is created by tauri.conf.json whether it is

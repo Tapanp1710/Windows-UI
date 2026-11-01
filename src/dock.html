@@ -51,6 +51,14 @@
       <div id="dock" class="dock glass" role="toolbar" aria-label="Dock">
         <div id="items" class="items"></div>
 
+        <!-- Search, as a field on the bar itself rather than an icon in the tray:
+             always in view, one click away, and it reads as "type here". Clicking
+             it turns the bar into the search panel below. -->
+        <button id="searchbar" class="searchbar" type="button" aria-label="Search apps">
+          <span class="searchbar-ico" id="ico-searchbar" aria-hidden="true"></span>
+          <span class="searchbar-text">Search</span>
+        </button>
+
         <!-- The tray. Everything that used to live in the top bar now sits at the
              right-hand end of this same pill, so there is one bar at the bottom
              rather than two bars on opposite edges. It is inside the dock's own
@@ -66,10 +74,10 @@
               id="dock-search"
               type="search"
               class="dock-search"
-              placeholder="Search apps, files and folders"
+              placeholder="Search apps"
               autocomplete="off"
               spellcheck="false"
-              aria-label="Search apps, files and folders"
+              aria-label="Search apps"
             />
             <button id="search-close" class="search-close" type="button" aria-label="Close search">Esc</button>
           </div>
@@ -91,8 +99,8 @@
           <button id="tray-widgets" class="tray-btn" type="button" aria-label="Choose desktop widgets">
             <span class="tray-ico" id="ico-widgets"></span>
           </button>
-          <button id="tray-search" class="tray-btn" type="button" aria-label="Search apps and files">
-            <span class="tray-ico" id="ico-search"></span>
+          <button id="tray-tint" class="tray-btn" type="button" aria-label="Glass tint">
+            <span class="tray-ico" id="ico-tint"></span>
           </button>
           <button id="tray-pin" class="tray-btn tray-pin" type="button" aria-label="Pin the dock">
             <span class="tray-ico" id="ico-pin"></span>

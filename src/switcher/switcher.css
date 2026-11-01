@@ -25,20 +25,41 @@ body {
   max-width: calc(100vw - 24px);
   padding: 16px 16px 10px;
   border-radius: 22px;
-  animation: bar-in var(--t-base) var(--ease-out) both;
+  /* Opacity only. The previews are placed by DWM at the cards' final positions,
+     so a scale-in left them misaligned with their cards. Rust fades the previews
+     over the same ~110ms. */
+  opacity: 0;
+  transition: opacity calc(110ms * var(--anim-scale)) var(--ease-out);
 }
 
-@keyframes bar-in {
-  from {
-    opacity: 0;
-    transform: scale(0.97);
-  }
+.bar.in {
+  opacity: 1;
 }
 
 .cards {
+  position: relative;
   display: flex;
   gap: 12px;
   overflow: hidden;
+}
+
+/* The selection: one plate that glides from card to card. */
+.hl {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: var(--radius-card);
+  background: var(--plate-bg);
+  border: 2px solid var(--accent);
+  box-sizing: border-box;
+  pointer-events: none;
+  transition:
+    transform calc(170ms * var(--anim-scale)) cubic-bezier(0.2, 0.9, 0.3, 1),
+    width calc(170ms * var(--anim-scale)) cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.hl.instant {
+  transition: none;
 }
 
 .card {
@@ -51,16 +72,12 @@ body {
   flex-direction: column;
   gap: 7px;
   cursor: default;
-  transition:
-    background var(--t-fast) var(--ease-out),
-    border-color var(--t-fast) var(--ease-out),
-    transform var(--t-fast) var(--ease-out);
+  /* Above the highlight, which slides underneath. */
+  position: relative;
 }
 
-.card.on {
-  background: var(--plate-bg);
-  border-color: var(--accent);
-  transform: translateY(-2px);
+.card:hover:not(.on) {
+  background: var(--glass-edge);
 }
 
 /* The preview hole. The checkerboard-free flat fill is only what shows for a window
@@ -94,6 +111,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text-dim);
+  transition: color calc(120ms * var(--anim-scale)) var(--ease-out);
 }
 
 .card.on .row span {

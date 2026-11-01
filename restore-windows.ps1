@@ -249,7 +249,7 @@ if ($RemoveToolchain) {
         & $rustup self uninstall -y 2>$null | Out-Null
         Note "uninstalled the Rust toolchain"
     }
-    foreach ($d in @("$env:USERPROFILE\.rustup", "$env:USERPROFILE\.cargo", "$env:LOCALAPPDATA\macui-toolchain")) {
+    foreach ($d in @("$env:USERPROFILE\.rustup", "$env:USERPROFILE\.cargo", "$env:LOCALAPPDATA\macui-toolchain", 'C:\macui-toolchain')) {
         if (Test-Path $d) {
             try { Remove-Item -Recurse -Force -Confirm:$false $d -ErrorAction Stop; Note "deleted $d" }
             catch { Write-Warning "could not delete $d : $($_.Exception.Message)" }

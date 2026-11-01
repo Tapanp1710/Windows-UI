@@ -29,7 +29,10 @@ static LIVE: Mutex<Vec<isize>> = Mutex::new(Vec::new());
 ///
 /// `client_only` trims the source's frame and shadow, which is what makes a row of
 /// previews line up rather than each one carrying its own invisible border.
-pub fn show(dest: isize, source: isize, x: i32, y: i32, w: i32, h: i32) -> bool {
+///
+/// `opacity` lets the switcher register its previews invisible and fade them in with
+/// its own bar: DWM draws them over the page, so a CSS fade never reaches them.
+pub fn show(dest: isize, source: isize, x: i32, y: i32, w: i32, h: i32, opacity: u8) -> bool {
     if w <= 0 || h <= 0 {
         return false;
     }
@@ -49,7 +52,7 @@ pub fn show(dest: isize, source: isize, x: i32, y: i32, w: i32, h: i32) -> bool 
                 right: x + w,
                 bottom: y + h,
             },
-            opacity: 255,
+            opacity,
             fVisible: true.into(),
             fSourceClientAreaOnly: true.into(),
             ..Default::default()
@@ -70,6 +73,21 @@ pub fn clear() {
     for thumb in taken {
         unsafe {
             let _ = DwmUnregisterThumbnail(thumb);
+        }
+    }
+}
+
+/// Set the opacity of every live registration, for fading them in.
+pub fn set_opacity(opacity: u8) {
+    let live = LIVE.lock().unwrap().clone();
+    let props = DWM_THUMBNAIL_PROPERTIES {
+        dwFlags: DWM_TNP_OPACITY,
+        opacity,
+        ..Default::default()
+    };
+    for thumb in live {
+        unsafe {
+            let _ = DwmUpdateThumbnailProperties(thumb, &props);
         }
     }
 }

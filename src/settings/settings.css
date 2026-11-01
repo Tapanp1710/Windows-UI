@@ -209,7 +209,7 @@ code {
 .seg button[aria-checked="true"] {
   background: var(--glass-bg);
   color: var(--text);
-  box-shadow: 0 1px 2px rgba(16, 32, 62, 0.12);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
 .seg button:focus-visible {
@@ -314,7 +314,7 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 50%;
   background: var(--accent);
   border: 2px solid var(--glass-bg);
-  box-shadow: 0 1px 2px rgba(16, 32, 62, 0.25);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 input[type="range"]:focus-visible {

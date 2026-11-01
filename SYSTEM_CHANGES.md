@@ -25,6 +25,15 @@ was not touched**. Build commands put the toolchain on PATH for that one process
 
 No registry keys were written. No system-wide software was installed. No MSIs ran.
 
+### A profile path with a space in it (2026-11-01)
+
+The same T-1 (Rust 1.99.1) and T-3 (NSIS 3.13) installs, plus:
+
+| # | What | Where | Undo |
+|---|---|---|---|
+| T-2a | MinGW (T-2) moved out of `%LOCALAPPDATA%` when the profile path has a space (`C:\Users\First Last`): gcc's spec adds `default-manifest.o` through `%:if-exists`, which splits its own install path at spaces, so every link fails. A `subst` drive does not help (gcc resolves its real path). `scripts\env.ps1` falls back to this folder when the default one is absent | `C:\macui-toolchain` | `Remove-Item -Recurse -Force C:\macui-toolchain` (also done by `restore-windows.ps1 -RemoveToolchain`) |
+| T-4 | Cargo build output. The project folder has a space too, and `windres` passes the build's `OUT_DIR` as an unquoted `-I` path, so the build was run with `$env:CARGO_TARGET_DIR = 'C:\macui-toolchain\target'`. The exe and installer are therefore at `C:\macui-toolchain\target\release\macui.exe` and `...\bundle\nsis\macui_0.1.0_x64-setup.exe`, not under `src-tauri\target` | `C:\macui-toolchain\target` | deleted with T-2a |
+
 ---
 
 ## 2. Windows UI state

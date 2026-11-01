@@ -89,7 +89,7 @@
         "transparent": true,
         "alwaysOnTop": true,
         "skipTaskbar": true,
-        "shadow": true,
+        "shadow": false,
         "focus": false,
         "visible": false,
         "maximizable": false,

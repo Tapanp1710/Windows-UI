@@ -643,3 +643,35 @@ working code on it.
 | G.5 | Toggling a widget takes effect | **PASS, the hard way** | blind coordinate probing hit the panel and switched clock and media off — which proves the control works, and was not something I meant to do. Restored |
 | G.6 | Switching off keeps position | PASS | positions unchanged through the accidental round trip |
 | G.7 | The panel's appearance | **NOT VERIFIED** | never captured on screen; aiming by coordinate kept missing and I stopped rather than keep taking the pointer. **Needs your eye** |
+
+## Focus without hanging (2026-11-01, build 26300)
+| # | Test | Result | Notes |
+|---|---|---|---|
+| H.0 | Panel dismissed by a click outside, then search, 6 cycles | PASS | **failed first, every time**: the sampler deadlocked on `PANEL_RECT`, auto-hide stopped and the app hung (D-056; GDB stack). 6 panels opened, 6 dismissed, 12 search toggles, responsive throughout, and the dock still auto-hides afterwards |
+| H.1 | Dock search open/close, 15 cycles | PASS | responsive after every open and close |
+| H.2 | Typing reaches the field after the async focus change | PASS | "note" lists Notepad, OneNote, Sticky Notes and a file hit |
+| H.3 | Dock icon: focused window minimises, click again restores | PASS | on File Explorer |
+| H.4 | Alt+Tab between two app windows | PASS | **failed first**: the log showed foreground unchanged after commit. Passes with the D-056 retry, and the foreground is still the target 400ms later |
+| H.5 | Alt+Tab, two Tabs, third window | PASS | |
+
+## Alt+Tab and dock labels (2026-11-01, build 26300) — D-057
+
+| # | Test | Result |
+|---|------|--------|
+| S.1 | Alt+Tab tapped (Alt released immediately), 6 times | PASS: swaps each time, switcher never shown or left open |
+| S.2 | Alt held 600-700ms, then released | PASS: switcher visible at ~140ms, previews aligned with cards, target activated, switcher closed |
+| S.3 | Alt held, Tab x3 | PASS: selection wraps to the right card; commits on release |
+| S.4 | Hover a dock icon | PASS: label at ~140ms; sweeping to another icon moves it, same height |
+
+## Glass, tint and Start (2026-11-01, build 26300) — D-058
+
+| # | Test | Result |
+|---|------|--------|
+| G.1 | Launcher window size vs client | PASS: 920x620 / 920x620 (was 934x628 with a white frame) |
+| G.2 | Panel (tint, widgets) edges | PASS: no white frame |
+| G.3 | Win opens launcher, Win again with launcher focused, x3 | PASS: launcher closes, Windows Start does not open (before: Start opened, launcher stayed) |
+| G.4 | Dock Start button opens, then closes, the launcher | PASS |
+| G.5 | Pick purple in the tint panel | PASS: `glassHue: 266` saved; dock, Start button, launcher and panel acrylic all purple |
+| G.6 | Pick Clear | PASS: `glassHue: null`, colourless glass again |
+| G.7 | Dock search field, type "code" | PASS: Visual Studio Code only, no files |
+| G.8 | Open a panel right after another | PASS: no "label already exists" failure |
