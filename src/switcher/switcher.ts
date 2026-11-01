@@ -1,18 +1,18 @@
 /**
- * Alt+Tab switcher.
+ * Alt+Tab switcher, as a carousel.
  *
  * Rust owns the keyboard, the window list and the selection; this draws it. The
  * split matters: the keyboard hook has to stay fast enough that Windows does not
  * drop it, so nothing about a keystroke waits on a webview.
  *
- * Each card leaves a hole for its DWM preview. The compositor draws the real window
- * into that rectangle **over** this page, so `.shot` must stay empty, and its
- * position has to be reported back after layout.
+ * The open windows sit on a ring around a glass disc. Tab (from Rust) turns the
+ * ring so the selection comes round to the bottom. Pointing at a window selects it
+ * and previews it *without* turning the ring - a ring that turned on hover would
+ * move the next icon under the pointer, which would select that one, and so on.
  *
- * That is also why nothing here moves with a transform: a preview stays where it
- * was placed, so a card that slid or scaled would leave its preview behind. The
- * bar only fades (Rust fades the previews with it), and the selection is a
- * separate highlight that slides between cards that stay still.
+ * The preview in the middle is one DWM thumbnail drawn over the page into `#shot`.
+ * The hole never moves; this reports which window should fill it, and Rust
+ * cross-fades from the last one.
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -28,90 +28,136 @@ interface Entry {
   icon: string | null;
 }
 
-const barEl = document.getElementById("bar") as HTMLDivElement;
-const cardsEl = document.getElementById("cards") as HTMLDivElement;
+/** Must match `--ring-r` in switcher.css. */
+const RING_RADIUS = 292;
+/** How far the ring winds in from when it opens. */
+const WIND_IN = 70;
+
+const discEl = document.getElementById("disc") as HTMLDivElement;
+const ringEl = document.getElementById("ring") as HTMLDivElement;
+const shotEl = document.getElementById("shot") as HTMLDivElement;
 const captionEl = document.getElementById("caption") as HTMLDivElement;
+const countEl = document.getElementById("count") as HTMLDivElement;
 
 let entries: Entry[] = [];
 let selected = 0;
 let gen = 0;
+/** The ring's turn, in degrees. Never wrapped, so every turn takes the short way
+ * round instead of spinning back past 360. */
+let spin = 0;
+/** Where the pointer last really was, to tell a moved pointer from icons moving
+ * under a still one while the ring turns. */
+let lastPointer = "";
 
-function cards(): HTMLElement[] {
-  return [...cardsEl.querySelectorAll<HTMLElement>(".card")];
+const step = () => 360 / Math.max(1, entries.length);
+
+function items(): HTMLElement[] {
+  return [...ringEl.querySelectorAll<HTMLElement>(".item")];
 }
 
-/** Hand the preview holes to Rust. Layout is forced here, so no frame wait. */
-function reportSlots(): void {
-  const slots = cards().map((card, i) => {
-    const r = (card.querySelector(".shot") as HTMLElement).getBoundingClientRect();
-    return { hwnd: entries[i].hwnd, x: r.left, y: r.top, w: r.width, h: r.height };
+/** The turn that brings `index` to the bottom of the ring, taken the short way
+ * from where the ring is now. */
+function spinFor(index: number): number {
+  const target = 180 - index * step();
+  const delta = ((((target - spin) % 360) + 540) % 360) - 180;
+  return spin + delta;
+}
+
+function setSpin(deg: number): void {
+  spin = deg;
+  ringEl.style.setProperty("--spin", `${deg}deg`);
+}
+
+/** Ask Rust to put this window's live preview in the hole. */
+function preview(index: number): void {
+  const e = entries[index];
+  if (!e) return;
+  const r = shotEl.getBoundingClientRect();
+  void invoke("cmd_switcher_slots", {
+    slots: [{ hwnd: e.hwnd, x: r.left, y: r.top, w: r.width, h: r.height }],
+    gen,
   });
-  void invoke("cmd_switcher_slots", { slots, gen });
 }
 
-function paintSelection(animate: boolean): void {
-  const all = cards();
-  all.forEach((c, i) => c.classList.toggle("on", i === selected));
+function paint(): void {
+  const n = entries.length;
+  items().forEach((el, i) => {
+    const d = Math.min((i - selected + n) % n, (selected - i + n) % n);
+    el.classList.toggle("on", d === 0);
+    el.classList.toggle("near", d === 1);
+  });
   captionEl.textContent = entries[selected]?.title ?? "";
-
-  const card = all[selected];
-  if (!card) return;
-
-  // Keep the selection in view when there are more windows than fit. Scrolling
-  // moves the holes, so the previews have to be placed again.
-  const before = cardsEl.scrollLeft;
-  card.scrollIntoView({ block: "nearest", inline: "nearest" });
-  const scrolled = cardsEl.scrollLeft !== before;
-
-  const hl = document.getElementById("hl") as HTMLDivElement;
-  hl.classList.toggle("instant", !animate || scrolled);
-  hl.style.width = `${card.offsetWidth}px`;
-  hl.style.height = `${card.offsetHeight}px`;
-  // The highlight lives inside the scrolling row, so it scrolls with the cards and
-  // their offsets are already in its coordinates.
-  hl.style.transform = `translate(${card.offsetLeft}px, ${card.offsetTop}px)`;
-
-  if (scrolled) reportSlots();
+  countEl.textContent = n > 1 ? `${selected + 1} of ${n}` : "";
 }
 
 function render(list: Entry[], sel: number): void {
   entries = list;
   selected = sel;
-  barEl.classList.remove("in");
-  cardsEl.textContent = "";
+  discEl.classList.remove("in");
+  ringEl.textContent = "";
 
-  const hl = document.createElement("div");
-  hl.id = "hl";
-  hl.className = "hl instant";
-  cardsEl.appendChild(hl);
+  // Icons shrink to fit when there are many windows, so the ring never overlaps.
+  const n = entries.length;
+  const room = (2 * Math.PI * RING_RADIUS) / Math.max(n, 1) - 16;
+  document.documentElement.style.setProperty(
+    "--item",
+    `${Math.round(Math.min(64, Math.max(36, room)))}px`,
+  );
 
-  for (const e of entries) {
-    const card = document.createElement("div");
-    card.className = "card";
+  entries.forEach((e, i) => {
+    const item = document.createElement("div");
+    item.className = "item";
+    item.style.setProperty("--a", `${i * step()}deg`);
+    item.setAttribute("aria-label", e.title);
 
-    const shot = document.createElement("div");
-    shot.className = "shot";
-
-    const row = document.createElement("div");
-    row.className = "row";
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
     if (e.icon) {
       const img = document.createElement("img");
       img.src = e.icon;
       img.alt = "";
       img.decoding = "sync";
-      row.appendChild(img);
+      bubble.appendChild(img);
+    } else {
+      const f = document.createElement("span");
+      f.className = "fallback";
+      bubble.appendChild(f);
     }
-    const label = document.createElement("span");
-    label.textContent = e.title;
-    row.appendChild(label);
+    // Stagger the icons growing in, starting from the selected one.
+    const order = (i - sel + n) % n;
+    bubble.style.transitionDelay = `${Math.min(order, 12) * 18}ms`;
+    item.appendChild(bubble);
 
-    card.append(shot, row);
-    card.addEventListener("click", () => void invoke("cmd_switcher_pick", { hwnd: e.hwnd }));
-    cardsEl.appendChild(card);
-  }
+    item.addEventListener("pointermove", (ev) => {
+      const at = `${ev.screenX},${ev.screenY}`;
+      if (at === lastPointer) return;
+      lastPointer = at;
+      if (i === selected) return;
+      selected = i;
+      paint();
+      preview(i);
+      void invoke("cmd_switcher_hover", { index: i, gen });
+    });
+    item.addEventListener("click", () => void invoke("cmd_switcher_pick", { hwnd: e.hwnd }));
+    ringEl.appendChild(item);
+  });
 
-  paintSelection(false);
-  reportSlots();
+  // Start wound back and small; `switcher:visible` lets it turn into place.
+  ringEl.classList.add("instant", "opening");
+  setSpin(spinFor(sel) - WIND_IN);
+  paint();
+  preview(sel);
+}
+
+function settle(): void {
+  // Commit the wound-back start before turning, or it never animates.
+  void ringEl.offsetWidth;
+  ringEl.classList.remove("instant", "opening");
+  setSpin(spin + WIND_IN);
+  // Delays are only for the entrance; Tab must answer at once.
+  window.setTimeout(() => {
+    for (const b of ringEl.querySelectorAll<HTMLElement>(".bubble")) b.style.transitionDelay = "";
+  }, 500);
 }
 
 async function main(): Promise<void> {
@@ -121,22 +167,26 @@ async function main(): Promise<void> {
     gen = e.payload[2];
     render(e.payload[0], e.payload[1]);
   });
-  // Sent once the window is actually on screen, so the fade is seen rather than
-  // spent while hidden.
+  // Sent once the window is actually on screen, so the entrance is seen rather
+  // than spent while hidden.
   await listen<number>("switcher:visible", (e) => {
-    if (e.payload === gen) barEl.classList.add("in");
+    if (e.payload !== gen) return;
+    discEl.classList.add("in");
+    settle();
   });
   await listen<number>("switcher:select", (e) => {
     selected = e.payload;
-    paintSelection(true);
+    setSpin(spinFor(selected));
+    paint();
+    preview(selected);
   });
-  // Blank while hidden, so the next opening never flashes this one's cards.
+  // Blank while hidden, so the next opening never flashes this one's ring.
   await listen("switcher:hide", () => {
-    barEl.classList.remove("in");
+    discEl.classList.remove("in");
   });
 
   // Created hidden and shown by Rust when Alt+Tab fires; showing it here would put
-  // an empty bar on screen at startup.
+  // an empty disc on screen at startup.
   await getCurrentWindow().hide();
 }
 

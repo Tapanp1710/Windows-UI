@@ -14,7 +14,7 @@
 //!   - The order is the z-order, which is Windows' own most-recently-used order.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -46,10 +46,6 @@ static GEN: AtomicU64 = AtomicU64::new(0);
 /// The last generation the page finished laying out, and a way to wait for it.
 static RENDERED: (Mutex<u64>, Condvar) = (Mutex::new(0), Condvar::new());
 
-/// Current opacity of the previews, so ones placed mid-fade join in at the right
-/// level.
-static THUMB_ALPHA: AtomicU8 = AtomicU8::new(0);
-
 /// Icons by executable path. Extracting and encoding a 256px icon per window on
 /// every Alt+Tab was most of the delay before the switcher appeared.
 static ICONS: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
@@ -59,10 +55,6 @@ const RENDER_WAIT: Duration = Duration::from_millis(150);
 
 /// While open, how often the physical Alt key is checked.
 const ALT_POLL: Duration = Duration::from_millis(40);
-
-/// Fade-in for the previews, matched to the bar's CSS fade.
-const FADE_STEPS: u32 = 7;
-const FADE_STEP: Duration = Duration::from_millis(16);
 
 /// Install the hook and start the thread that acts on it.
 ///
@@ -195,8 +187,7 @@ fn advance(app: &AppHandle, backwards: bool) {
     };
 
     // Let the page lay out before the window appears, so it never shows the last
-    // opening's cards for a frame.
-    THUMB_ALPHA.store(0, Ordering::SeqCst);
+    // opening's ring for a frame.
     let _ = app.emit("switcher:show", payload);
     {
         let (lock, cv) = &RENDERED;
@@ -208,29 +199,20 @@ fn advance(app: &AppHandle, backwards: bool) {
     }
     let _ = w.show();
     let _ = app.emit("switcher:visible", gen);
-    fade_in(gen);
 }
 
-/// Bring the previews up alongside the bar's CSS fade.
-fn fade_in(gen: u64) {
-    if !win::animations_enabled() {
-        THUMB_ALPHA.store(255, Ordering::SeqCst);
-        win::dwm::set_opacity(255);
+/// The pointer is over one of the ring's windows: that is the selection now, so
+/// letting go of Alt switches to what the preview is showing. Not echoed back to
+/// the page, which has already moved its highlight.
+pub fn hover(index: usize, gen: u64) {
+    if GEN.load(Ordering::SeqCst) != gen {
         return;
     }
-    std::thread::spawn(move || {
-        for i in 1..=FADE_STEPS {
-            std::thread::sleep(FADE_STEP);
-            if GEN.load(Ordering::SeqCst) != gen {
-                return;
-            }
-            // Ease-out, so the previews arrive quickly and settle.
-            let t = i as f32 / FADE_STEPS as f32;
-            let a = (255.0 * (1.0 - (1.0 - t).powi(3))).round() as u8;
-            THUMB_ALPHA.store(a, Ordering::SeqCst);
-            win::dwm::set_opacity(a);
+    if let Some(state) = STATE.lock().unwrap().as_mut() {
+        if index < state.entries.len() {
+            state.selected = index;
         }
-    });
+    }
 }
 
 fn commit(app: &AppHandle) {
@@ -259,7 +241,6 @@ fn close(app: &AppHandle) {
     GEN.fetch_add(1, Ordering::SeqCst);
     win::hotkeys::SWITCHER_OPEN.store(false, Ordering::SeqCst);
     *STATE.lock().unwrap() = None;
-    THUMB_ALPHA.store(0, Ordering::SeqCst);
     win::dwm::clear();
     if let Some(w) = app.get_webview_window("switcher") {
         let _ = w.hide();
@@ -267,27 +248,22 @@ fn close(app: &AppHandle) {
     let _ = app.emit("switcher:hide", ());
 }
 
-/// Register a DWM preview for each card the page laid out.
+/// Show the live preview the page asked for: the selected (or hovered) window, in
+/// the hole at the centre of the ring. Changing it cross-fades (see win/dwm.rs).
 ///
-/// Called for the first layout and again whenever the cards scroll. Stale
-/// generations are ignored: the switcher has closed or reopened since.
+/// Stale generations are ignored: the switcher has closed or reopened since.
 pub fn place_thumbnails(dest: isize, slots: &[crate::SwitcherSlot], scale: f64, gen: u64) {
     if GEN.load(Ordering::SeqCst) != gen {
         return;
     }
-    // Previous registrations first: a leaked thumbnail holds a reference to a
-    // window that may be on its way out.
-    win::dwm::clear();
-    let alpha = THUMB_ALPHA.load(Ordering::SeqCst);
     for s in slots {
-        win::dwm::show(
+        win::dwm::present(
             dest,
             s.hwnd,
             (s.x * scale).round() as i32,
             (s.y * scale).round() as i32,
             (s.w * scale).round() as i32,
             (s.h * scale).round() as i32,
-            alpha,
         );
     }
     let (lock, cv) = &RENDERED;

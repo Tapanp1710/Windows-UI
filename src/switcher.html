@@ -31,12 +31,18 @@
     <link rel="stylesheet" href="./switcher/switcher.css" />
   </head>
   <body>
-    <!-- One centred glass bar. Each card leaves a hole where DWM draws that
-         window's live preview - anything painted there would be covered. -->
-    <div class="wrap">
-      <div class="bar glass" id="bar">
-        <div class="cards" id="cards"></div>
-        <div class="caption" id="caption"></div>
+    <!-- A glass disc with the open windows on a ring around its rim, and the
+         selected one's live preview in the middle. The preview is drawn by DWM
+         over this page, into the empty #shot hole; nothing painted there shows. -->
+    <div class="stage">
+      <div class="disc glass" id="disc">
+        <div class="track" aria-hidden="true"></div>
+        <div class="ring" id="ring"></div>
+        <div class="centre">
+          <div class="shot" id="shot"></div>
+          <div class="caption" id="caption"></div>
+          <div class="count" id="count"></div>
+        </div>
       </div>
     </div>
     <script type="module" src="./switcher/switcher.ts"></script>

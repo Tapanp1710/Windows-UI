@@ -39,8 +39,8 @@ pub struct Settings {
     /// and Windows Start opens exactly as it always did.
     pub launcher_enabled: bool,
     pub dock_always_visible: bool,
-    /// "right" | "bottom": the screen edge the dock lives on. Right by default, the
-    /// way the user asked for it; touch that edge to bring it out.
+    /// "bottom" | "right": the screen edge the dock lives on. Touch that edge to
+    /// bring it out.
     #[serde(default = "default_dock_edge")]
     pub dock_edge: String,
     pub dock_icon_size: u32,
@@ -154,7 +154,7 @@ impl Default for Settings {
 }
 
 fn default_dock_edge() -> String {
-    "right".into()
+    "bottom".into()
 }
 
 pub fn settings_path() -> PathBuf {

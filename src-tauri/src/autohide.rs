@@ -45,7 +45,7 @@ const POLL_ACTIVE: Duration = Duration::from_millis(20);
 /// Set from settings; when true the dock never auto-hides.
 pub static ALWAYS_VISIBLE: AtomicBool = AtomicBool::new(false);
 /// Set from settings: the dock stands on the right edge instead of the bottom one.
-pub static DOCK_RIGHT: AtomicBool = AtomicBool::new(true);
+pub static DOCK_RIGHT: AtomicBool = AtomicBool::new(false);
 
 /// The sampler's current reveal state.
 ///

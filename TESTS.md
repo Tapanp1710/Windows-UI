@@ -687,3 +687,14 @@ working code on it.
 | W.5 | Widgets panel from the right-edge dock | PASS: opens at x=1130..1430 (logical), left of the dock at ~1443 |
 | W.6 | Dock search from the right-edge dock | PASS: focus taken, panel grows leftward |
 | W.7 | Turn off with passcode | NOT RUN by me: it quits the app while it is in use. Wrong-code path is client-side only |
+
+## Carousel switcher, dock at the bottom (2026-11-01) — D-060
+
+| # | Test | Result |
+|---|------|--------|
+| C.1 | Alt held + Tab | PASS: disc with both windows on the ring, selection at the bottom, live preview and title in the middle, "2 of 2" |
+| C.2 | Tab again | PASS: ring turned, the other window at the bottom, preview cross-faded, "1 of 2" |
+| C.3 | Hover the top icon with Alt held | PASS: preview and title switched to it, ring did not turn |
+| C.4 | Esc, release Alt | PASS: switcher gone, focus unchanged |
+| C.5 | Dock after reinstall | PASS: back at the bottom edge (`dockEdge: "bottom"`) |
+| C.6 | Installed build relaunched outside the editor; Startup shortcut still points at it | PASS |

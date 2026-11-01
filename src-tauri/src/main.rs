@@ -215,6 +215,7 @@ fn main() {
             cmd_media_art,
             cmd_switcher_slots,
             cmd_switcher_pick,
+            cmd_switcher_hover,
             cmd_user_name,
             cmd_launcher_apps,
             cmd_launcher_folders,
@@ -1393,6 +1394,12 @@ pub struct SwitcherSlot {
 }
 
 /// A click on a card: switch to that window and close.
+/// The pointer moved onto one of the ring's windows.
+#[tauri::command]
+fn cmd_switcher_hover(index: usize, gen: u64) {
+    switcher::hover(index, gen);
+}
+
 #[tauri::command]
 async fn cmd_switcher_pick(app: tauri::AppHandle, hwnd: isize) {
     switcher::pick(&app, hwnd);

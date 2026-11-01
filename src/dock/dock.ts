@@ -73,7 +73,7 @@ let prefs: SystemPrefs = {
   animationSpeed: 1,
   magnification: true,
   alwaysVisible: false,
-  dockEdge: "right",
+  dockEdge: "bottom",
   iconSize: 44,
 };
 

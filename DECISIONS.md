@@ -1304,3 +1304,37 @@ removes the start-at-sign-in shortcut and runs `return_to_normal`, which brings 
 the taskbar, Start, Alt+Tab and the wallpaper, then quits. A wrong code shakes the
 field and does nothing else. It is a guard against stray clicks, not security: the
 tray's Quit and `restore-windows.ps1` still work.
+
+## D-060 — Alt+Tab as a carousel; the dock back at the bottom (2026-11-01)
+
+The dock's default edge is **bottom** again, at the user's request. The right-edge
+layout from D-059 stays available under Settings > Dock > Position.
+
+**The switcher is now a ring:**
+- **Layout:** the open windows sit as icons on a ring around a round glass disc.
+  The selected window's live preview fills the middle, with its title and "n of m".
+- **Tab / Shift+Tab** turn the ring so the selection comes round to the bottom.
+  The turn always takes the short way round.
+- **Hover** previews a window and makes it the selection, so letting go of Alt
+  switches to what you are looking at. It never turns the ring: a ring that turned
+  on hover would slide the next icon under a still pointer, which would select that
+  one, and so on. Hover also ignores pointer events that arrive without the pointer
+  having moved.
+
+**How the motion is built:**
+- The turn is one registered custom property (`@property --spin`). The ring rotates
+  by it, and every icon counter-rotates by the same inherited value. Both read one
+  animated number, so the icons stay upright through the whole turn.
+- **Opening:** the ring winds in 70° and the icons grow in one after another, from
+  the selected one.
+
+**Previews:** the old row needed one DWM thumbnail per card. The ring uses one, in a
+fixed hole, so nothing that holds a preview ever moves (the reason D-057 banned card
+transforms). `win/dwm.rs` now cross-fades: a new preview is registered invisible,
+eased in over about 150ms, and the old one is eased out and released at zero. One
+fade thread runs only while something is moving. Previews are letterboxed to the
+window's own aspect ratio instead of stretched.
+
+**The disc** is denser than the other glass. Windows' blur only comes in
+rectangles, and a page's backdrop blur cannot see other windows, so at the usual
+density the title sat on whatever was behind it.

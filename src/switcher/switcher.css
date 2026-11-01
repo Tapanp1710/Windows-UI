@@ -1,19 +1,31 @@
 /*
- * Alt+Tab switcher.
+ * Alt+Tab switcher: a carousel.
  *
- * The window is sized to the bar rather than to the screen: a window is a
- * compositing surface whether it is showing or not, and a screen-sized one costs
- * real memory for something that only ever occupies a strip down the middle.
+ * A round glass disc with the open windows on a ring around its rim. Tab turns the
+ * ring so the next window comes round to the bottom; the selected window's live
+ * preview fills the middle. Pointing at a window previews it without turning the
+ * ring, so the ring never moves out from under the pointer.
  *
- * Each card leaves a hole for its DWM preview: the compositor draws that window's
- * live contents over ours, so nothing may be painted inside `.shot`.
+ * The preview is a DWM thumbnail drawn over this page into `.shot`, so nothing
+ * here may paint inside it, and nothing that holds it may move: the disc only
+ * fades, and all the motion is the ring's. Rust fades the preview itself.
  */
+
+/* Registered so it can be animated: the ring turns by this, and every icon on it
+   counter-turns by the same inherited value, so the two stay in lockstep and the
+   icons stay upright through the whole turn. */
+@property --spin {
+  syntax: "<angle>";
+  inherits: true;
+  initial-value: 0deg;
+}
 
 body {
   background: transparent;
+  overflow: hidden;
 }
 
-.wrap {
+.stage {
   width: 100%;
   height: 100%;
   display: flex;
@@ -21,110 +33,172 @@ body {
   justify-content: center;
 }
 
-.bar {
-  max-width: calc(100vw - 24px);
-  padding: 16px 16px 10px;
-  border-radius: 22px;
-  /* Opacity only. The previews are placed by DWM at the cards' final positions,
-     so a scale-in left them misaligned with their cards. Rust fades the previews
-     over the same ~110ms. */
-  opacity: 0;
-  transition: opacity calc(110ms * var(--anim-scale)) var(--ease-out);
+/* Must match RING_RADIUS in switcher.ts. */
+:root {
+  --ring-r: 292px;
+  --item: 60px;
+  --turn: calc(520ms * var(--anim-scale));
+  --glide: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.bar.in {
+.disc {
+  position: relative;
+  width: 720px;
+  height: 720px;
+  border-radius: 50%;
+  /* Denser than the other glass. Windows' blur (win/acrylic.rs) only comes in
+     rectangles, so a round disc cannot have it, and the page's own backdrop blur
+     cannot see other windows. At the usual glass density the title sat on
+     whatever was behind it. A sheen and a radial falloff keep it reading as glass. */
+  background:
+    var(--glass-sheen),
+    radial-gradient(circle at 50% 50%, var(--tooltip-bg) 0%, var(--tooltip-bg) 55%, var(--glass-bg) 100%);
+  opacity: 0;
+  transition: opacity calc(160ms * var(--anim-scale)) var(--ease-out);
+}
+
+.disc.in {
   opacity: 1;
 }
 
-.cards {
-  position: relative;
-  display: flex;
-  gap: 12px;
-  overflow: hidden;
-}
-
-/* The selection: one plate that glides from card to card. */
-.hl {
+/* The groove the icons run in. */
+.track {
   position: absolute;
-  left: 0;
-  top: 0;
-  border-radius: var(--radius-card);
-  background: var(--plate-bg);
-  border: 2px solid var(--accent);
-  box-sizing: border-box;
+  inset: calc(50% - var(--ring-r));
+  border-radius: 50%;
+  border: 1px solid var(--divider);
+  box-shadow: inset 0 0 40px hsl(0 0% 0% / 0.08);
   pointer-events: none;
-  transition:
-    transform calc(170ms * var(--anim-scale)) cubic-bezier(0.2, 0.9, 0.3, 1),
-    width calc(170ms * var(--anim-scale)) cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 
-.hl.instant {
+.ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform: rotate(var(--spin));
+  transition: --spin var(--turn) var(--glide);
+}
+
+.ring.instant,
+.ring.instant .item,
+.ring.instant .bubble {
   transition: none;
 }
 
-.card {
-  flex: 0 0 auto;
-  width: 176px;
-  padding: 8px;
-  border-radius: var(--radius-card);
-  border: 2px solid transparent;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
+/* Each icon sits at its own angle (--a) on the rim, then turns back by its angle
+   plus the ring's, so it always faces up. */
+.item {
+  position: absolute;
+  left: calc(var(--item) / -2);
+  top: calc(var(--item) / -2);
+  width: var(--item);
+  height: var(--item);
+  transform: rotate(var(--a)) translateY(calc(-1 * var(--ring-r)))
+    rotate(calc(-1 * (var(--a) + var(--spin))));
   cursor: default;
-  /* Above the highlight, which slides underneath. */
-  position: relative;
 }
 
-.card:hover:not(.on) {
-  background: var(--glass-edge);
-}
-
-/* The preview hole. The checkerboard-free flat fill is only what shows for a window
-   DWM will not give us - a minimised one, usually. */
-.shot {
-  width: 160px;
-  height: 100px;
-  border-radius: 9px;
-  background: var(--glass-edge);
-  overflow: hidden;
-}
-
-.row {
+.bubble {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
   display: flex;
   align-items: center;
-  gap: 7px;
-  min-width: 0;
+  justify-content: center;
+  background: var(--plate-bg);
+  border: 1px solid var(--plate-border);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.25),
+    0 4px 14px rgba(0, 0, 0, 0.2);
+  transform: scale(var(--s, 0.86));
+  opacity: var(--o, 0.78);
+  transition:
+    transform calc(360ms * var(--anim-scale)) var(--glide),
+    opacity calc(260ms * var(--anim-scale)) var(--ease-out),
+    box-shadow calc(260ms * var(--anim-scale)) var(--ease-out),
+    background calc(260ms * var(--anim-scale)) var(--ease-out);
 }
 
-.row img {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 auto;
+.bubble img {
+  width: 64%;
+  height: 64%;
   object-fit: contain;
-  border-radius: 4px;
+  pointer-events: none;
 }
 
-.row span {
-  font-size: var(--fs-small);
+.bubble .fallback {
+  width: 50%;
+  height: 50%;
+  border-radius: 30%;
+  background: var(--glass-edge);
+}
+
+.item.near .bubble {
+  --s: 0.96;
+  --o: 0.92;
+}
+
+.item:hover .bubble {
+  --o: 1;
+  background: var(--accent-wash);
+}
+
+.item.on .bubble {
+  --s: 1.24;
+  --o: 1;
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.35),
+    0 0 0 3px var(--accent-soft),
+    0 8px 26px rgba(0, 0, 0, 0.3);
+}
+
+/* Opening: the ring winds in and the icons grow into place, one after another. */
+.ring.opening .bubble {
+  --s: 0.4;
+  --o: 0;
+}
+
+/* The middle: preview, title, position. */
+.centre {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 420px;
+}
+
+/* The preview hole. The flat fill is only what shows around a letterboxed window,
+   or for one DWM will not give us - a minimised one, usually. */
+.shot {
+  width: 400px;
+  height: 236px;
+  border-radius: 14px;
+  background: hsl(0 0% 0% / 0.16);
+  box-shadow: 0 0 0 1px var(--divider);
+}
+
+.caption {
+  max-width: 100%;
+  font-size: 15px;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--text-dim);
-  transition: color calc(120ms * var(--anim-scale)) var(--ease-out);
-}
-
-.card.on .row span {
+  min-height: 20px;
   color: var(--text);
 }
 
-/* The selected window's full title, which rarely fits in a card. */
-.caption {
-  margin-top: 10px;
-  text-align: center;
-  font-size: var(--fs-label);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-height: 18px;
+.count {
+  margin-top: -6px;
+  font-size: var(--fs-small);
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
 }
