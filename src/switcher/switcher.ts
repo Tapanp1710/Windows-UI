@@ -28,8 +28,10 @@ interface Entry {
   icon: string | null;
 }
 
-/** Must match `--ring-r` in switcher.css. */
-const RING_RADIUS = 292;
+/** The disc's diameter as a share of the screen's height. */
+const DISC_SHARE = 0.5;
+/** The window is this big (tauri.conf.json), so the disc can never be bigger. */
+const DISC_MAX = 740;
 /** How far the ring winds in from when it opens. */
 const WIND_IN = 70;
 
@@ -90,19 +92,43 @@ function paint(): void {
   countEl.textContent = n > 1 ? `${selected + 1} of ${n}` : "";
 }
 
+/**
+ * Size the disc from the screen: half its height across, so it never covers more
+ * than the middle of the screen. The ring, the icons and the preview hole all
+ * follow from that one number.
+ */
+function layoutFor(n: number): void {
+  const disc = Math.round(Math.min(DISC_MAX, window.screen.height * DISC_SHARE));
+  // Icons as large as the disc allows, shrunk further when there are many windows
+  // so neighbours never overlap.
+  let item = Math.min(64, Math.max(32, disc * 0.1));
+  // The selected icon grows to 1.24x; it must stay inside the rim.
+  let ring = disc / 2 - (item * 1.24) / 2 - 12;
+  const room = (2 * Math.PI * ring) / Math.max(n, 1) - 12;
+  if (room < item) {
+    item = Math.max(26, room);
+    ring = disc / 2 - (item * 1.24) / 2 - 12;
+  }
+  // The preview and its title fit inside the ring of icons.
+  const shotW = Math.round(disc * 0.48);
+  const shotH = Math.round(shotW * 0.57);
+
+  const root = document.documentElement.style;
+  root.setProperty("--disc", `${disc}px`);
+  root.setProperty("--ring-r", `${Math.round(ring)}px`);
+  root.setProperty("--item", `${Math.round(item)}px`);
+  root.setProperty("--shot-w", `${shotW}px`);
+  root.setProperty("--shot-h", `${shotH}px`);
+}
+
 function render(list: Entry[], sel: number): void {
   entries = list;
   selected = sel;
   discEl.classList.remove("in");
   ringEl.textContent = "";
 
-  // Icons shrink to fit when there are many windows, so the ring never overlaps.
+  layoutFor(entries.length);
   const n = entries.length;
-  const room = (2 * Math.PI * RING_RADIUS) / Math.max(n, 1) - 16;
-  document.documentElement.style.setProperty(
-    "--item",
-    `${Math.round(Math.min(64, Math.max(36, room)))}px`,
-  );
 
   entries.forEach((e, i) => {
     const item = document.createElement("div");

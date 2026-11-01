@@ -33,18 +33,22 @@ body {
   justify-content: center;
 }
 
-/* Must match RING_RADIUS in switcher.ts. */
+/* Sized from the screen in switcher.ts (layoutFor): the disc is half the screen's
+   height across, and everything on it scales with it. These are the fallbacks. */
 :root {
-  --ring-r: 292px;
-  --item: 60px;
+  --disc: 432px;
+  --ring-r: 172px;
+  --item: 44px;
+  --shot-w: 208px;
+  --shot-h: 118px;
   --turn: calc(520ms * var(--anim-scale));
   --glide: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .disc {
   position: relative;
-  width: 720px;
-  height: 720px;
+  width: var(--disc);
+  height: var(--disc);
   border-radius: 50%;
   /* Denser than the other glass. Windows' blur (win/acrylic.rs) only comes in
      rectangles, so a round disc cannot have it, and the page's own backdrop blur
@@ -171,23 +175,23 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  width: 420px;
+  gap: 8px;
+  width: calc(var(--shot-w) + 24px);
 }
 
 /* The preview hole. The flat fill is only what shows around a letterboxed window,
    or for one DWM will not give us - a minimised one, usually. */
 .shot {
-  width: 400px;
-  height: 236px;
-  border-radius: 14px;
+  width: var(--shot-w);
+  height: var(--shot-h);
+  border-radius: 10px;
   background: hsl(0 0% 0% / 0.16);
   box-shadow: 0 0 0 1px var(--divider);
 }
 
 .caption {
   max-width: 100%;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -197,8 +201,8 @@ body {
 }
 
 .count {
-  margin-top: -6px;
-  font-size: var(--fs-small);
+  margin-top: -4px;
+  font-size: 11px;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }

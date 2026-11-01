@@ -1338,3 +1338,8 @@ window's own aspect ratio instead of stretched.
 **The disc** is denser than the other glass. Windows' blur only comes in
 rectangles, and a page's backdrop blur cannot see other windows, so at the usual
 density the title sat on whatever was behind it.
+
+**Size (follow-up).** The first disc was 720 CSS px, about 83% of the screen's
+height. It is now sized from the screen: half the screen's height across, capped
+by the 760px window. The ring, the icons and the preview hole are all derived from
+that diameter in `layoutFor`. Measured: 540 physical px on a 1080px-tall screen.
