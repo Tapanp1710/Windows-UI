@@ -214,10 +214,11 @@ const BT_ICON: Record<string, string> = {
   other: SVG(`<path d="M7 7.5 17 16.5 12 21V3l5 4.5L7 16.5"/>`),
 };
 
-function showSub(which: "tiles" | "wifi" | "bt"): void {
+function showSub(which: "tiles" | "wifi" | "bt" | "off"): void {
   $<HTMLElement>("tiles").hidden = which !== "tiles";
   $<HTMLElement>("wifi-sub").hidden = which !== "wifi";
   $<HTMLElement>("bt-sub").hidden = which !== "bt";
+  $<HTMLElement>("off-sub").hidden = which !== "off";
   // The sliders and battery belong to the tile view, not to a sub-page.
   for (const id of ["sliders-wrap", "batt-row"]) {
     const el = document.getElementById(id);
@@ -654,6 +655,52 @@ async function renderTint(): Promise<void> {
   paint();
 }
 
+/* ------------------------------------------------------------- turn off */
+
+/**
+ * "Turn off macui", behind a passcode. Rust checks the code, removes the start-at-
+ * sign-in shortcut and quits, putting Windows back exactly as it was.
+ *
+ * The panel never takes focus (see cmd_open_panel), so it cannot be typed into.
+ * While the passcode field is up it borrows the dock search's switch, which lets
+ * the calling window take keyboard focus and hands it back afterwards.
+ */
+function wireTurnOff(): void {
+  const code = $<HTMLInputElement>("off-code");
+  const error = $("off-error");
+  let focused = false;
+
+  const leave = async () => {
+    showSub("tiles");
+    if (focused) {
+      focused = false;
+      await invoke("cmd_dock_search_focus", { on: false });
+    }
+  };
+
+  $("turn-off").addEventListener("click", async () => {
+    code.value = "";
+    error.hidden = true;
+    showSub("off");
+    focused = true;
+    await invoke("cmd_dock_search_focus", { on: true });
+    code.focus();
+  });
+  $("off-back").addEventListener("click", () => void leave());
+
+  $<HTMLFormElement>("off-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const ok = await invoke<boolean>("cmd_turn_off", { code: code.value });
+    if (ok) return; // the process is on its way out
+    error.hidden = false;
+    code.value = "";
+    code.classList.remove("shake");
+    void code.offsetWidth; // restart the animation
+    code.classList.add("shake");
+    code.focus();
+  });
+}
+
 /* -------------------------------------------------------------- startup */
 
 async function main(): Promise<void> {
@@ -697,6 +744,7 @@ async function main(): Promise<void> {
     $("quick").hidden = false;
     $("wifi-back").addEventListener("click", () => showSub("tiles"));
     $("bt-back").addEventListener("click", () => showSub("tiles"));
+    wireTurnOff();
     buildTiles();
     wireVolume();
     await Promise.all([refreshRadios(), refreshStatus(), wireBrightness()]);

@@ -79,12 +79,19 @@
             <input type="checkbox" class="switch" id="dockEnabled" />
           </div>
           <div class="row">
+            <label for="dockEdge">Position</label>
+            <div class="seg" id="dockEdge" role="radiogroup" aria-label="Dock position">
+              <button data-value="right">Right</button>
+              <button data-value="bottom">Bottom</button>
+            </div>
+          </div>
+          <div class="row">
             <label for="dockAlwaysVisible">Always visible</label>
             <input type="checkbox" class="switch" id="dockAlwaysVisible" />
           </div>
           <p class="note">
-            Off means it behaves like an auto-hidden Windows taskbar: touch the bottom
-            edge of the screen to bring it up.
+            Off means it behaves like an auto-hidden Windows taskbar: touch the edge
+            it sits on to bring it out.
           </p>
           <div class="row">
             <label for="dockMagnification">Magnify icons on hover</label>

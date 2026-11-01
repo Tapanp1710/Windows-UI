@@ -675,3 +675,15 @@ working code on it.
 | G.6 | Pick Clear | PASS: `glassHue: null`, colourless glass again |
 | G.7 | Dock search field, type "code" | PASS: Visual Studio Code only, no files |
 | G.8 | Open a panel right after another | PASS: no "label already exists" failure |
+
+## Win guard, right-edge dock, off switch (2026-11-01, build 26300) — D-059
+
+| # | Test | Result |
+|---|------|--------|
+| W.1 | 8 injected Win taps, launcher closed/open alternately | PASS (pre-guard build): launcher toggles every time |
+| W.2 | Real Win press the hook missed | PASS: log "win guard: the hook missed a Win press; handled here", launcher toggled, no Windows Start |
+| W.3 | Installed build started outside VS Code (parent WmiPrvSE, not the editor) | PASS: keeps running with VS Code closed; Startup shortcut points at `%LOCALAPPDATA%\macui\macui.exe` |
+| W.4 | Dock on the right edge | PASS: window right-aligned and vertically centred, column layout, slides in from the right |
+| W.5 | Widgets panel from the right-edge dock | PASS: opens at x=1130..1430 (logical), left of the dock at ~1443 |
+| W.6 | Dock search from the right-edge dock | PASS: focus taken, panel grows leftward |
+| W.7 | Turn off with passcode | NOT RUN by me: it quits the app while it is in use. Wrong-code path is client-side only |

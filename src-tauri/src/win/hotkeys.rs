@@ -44,8 +44,19 @@
 //! The callback therefore does the least work that can possibly answer "swallow or
 //! not": it reads a couple of key states and pushes an enum down a channel. It never
 //! touches a window, never allocates, and never blocks.
+//!
+//! ## The guard
+//!
+//! The hook alone still let Windows Start open on some presses in real use (D-059).
+//! It is blind while one of our own windows has focus, and Windows silently drops a
+//! low-level hook that is ever slow to answer, after which every press went to
+//! Start until a restart. So a second, passive check runs beside it: `start_guard`
+//! reads the Win key's physical state (a read, like the dock's cursor sampling -
+//! nothing is installed and nothing is swallowed) and covers any press the hook did
+//! not see. It masks that press the same way, puts the hook back if it has been
+//! dropped, and as a last resort closes Start if it opens anyway.
 
-use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::OnceLock;
 
@@ -68,10 +79,20 @@ pub enum Key {
     Launcher,
     /// Escape while the launcher is open.
     CloseLauncher,
+    /// Windows Start opened in place of the launcher and has been closed: show ours.
+    OpenLauncher,
 }
 
 static TX: OnceLock<Sender<Key>> = OnceLock::new();
 static HOOK: AtomicIsize = AtomicIsize::new(0);
+/// The thread pumping the hook, so a replacement hook can retire it.
+static HOOK_THREAD: AtomicU32 = AtomicU32::new(0);
+/// Counts the Win presses the hook has seen, so the guard can tell whether a press
+/// was the hook's to handle.
+static PRESS_SEQ: AtomicU64 = AtomicU64::new(0);
+/// When we last injected a Ctrl tap, in ms since start, so the guard does not take
+/// our own Ctrl for the user pressing a combination.
+static LAST_INJECT_MS: AtomicU64 = AtomicU64::new(0);
 
 /// Whether the switcher is on screen. Read by the hook to decide whether Esc and the
 /// Alt release mean anything, so it must be kept in step by the UI side.
@@ -141,6 +162,7 @@ unsafe fn release_win_without_start(win_vk: u16) {
         },
     };
 
+    LAST_INJECT_MS.store(now_ms(), Ordering::Relaxed);
     let events = [
         key(VK_CONTROL, KEYBD_EVENT_FLAGS(0)),
         key(VK_CONTROL, KEYEVENTF_KEYUP),
@@ -152,13 +174,13 @@ unsafe fn release_win_without_start(win_vk: u16) {
 /// Make a Win press that is still held count as a combination, so its release
 /// does not open Start.
 ///
-/// For the launcher's own page. While one of our windows has keyboard focus this
-/// hook is not called at all (measured: with the launcher focused, Windows' own
-/// Alt+Tab appeared and no Win release reached the hook), so the page sees the
-/// Win key instead and asks for this. A Ctrl tap while Win is down is exactly
+/// For the guard, on a press the hook did not see. While one of our windows has
+/// keyboard focus this hook is not called at all (measured: with the launcher
+/// focused, Windows' own Alt+Tab appeared and no Win release reached the hook).
+/// A Ctrl tap while Win is down is exactly
 /// what Windows treats as "something else was pressed", and nothing is swallowed:
 /// the real Win release still goes through, so the modifier cannot latch (D-044).
-pub fn mask_held_win() {
+fn mask_held_win() {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
         KEYEVENTF_KEYUP, VK_CONTROL,
@@ -175,6 +197,7 @@ pub fn mask_held_win() {
             },
         },
     };
+    LAST_INJECT_MS.store(now_ms(), Ordering::Relaxed);
     unsafe {
         SendInput(&[key(KEYBD_EVENT_FLAGS(0)), key(KEYEVENTF_KEYUP)], std::mem::size_of::<INPUT>() as i32);
     }
@@ -217,6 +240,7 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
             // Win+<held key> look like a bare Win press on release.
             if !WIN_DOWN.swap(true, Ordering::Relaxed) {
                 WIN_USED.store(false, Ordering::Relaxed);
+                PRESS_SEQ.fetch_add(1, Ordering::Relaxed);
             }
         } else if down && WIN_DOWN.load(Ordering::Relaxed) {
             // Something else was pressed with Win held: this is a combination, and
@@ -303,15 +327,20 @@ fn send(key: Key) {
 /// swallowed and Windows' own Alt+Tab is untouched.
 pub fn install(tx: Sender<Key>) -> bool {
     let _ = TX.set(tx);
+    spawn_hook_thread()
+}
 
+fn spawn_hook_thread() -> bool {
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<bool>();
     std::thread::spawn(move || {
+        use windows::Win32::System::Threading::GetCurrentThreadId;
         use windows::Win32::UI::WindowsAndMessaging::{DispatchMessageW, GetMessageW, MSG};
 
         let hook = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), None, 0) };
         match hook {
             Ok(h) => {
                 HOOK.store(h.0 as isize, Ordering::SeqCst);
+                HOOK_THREAD.store(unsafe { GetCurrentThreadId() }, Ordering::SeqCst);
                 let _ = ready_tx.send(true);
                 crate::logln!("keyboard hook installed for Alt+Tab");
             }
@@ -322,8 +351,8 @@ pub fn install(tx: Sender<Key>) -> bool {
             }
         }
 
-        // Pump until the process ends. Nothing else runs on this thread, so the
-        // hook is always serviced immediately.
+        // Pump until the process ends, or until a replacement hook retires this
+        // thread. Nothing else runs here, so the hook is always serviced at once.
         let mut msg = MSG::default();
         unsafe {
             while GetMessageW(&mut msg, None, 0, 0).as_bool() {
@@ -335,6 +364,167 @@ pub fn install(tx: Sender<Key>) -> bool {
     ready_rx
         .recv_timeout(std::time::Duration::from_secs(3))
         .unwrap_or(false)
+}
+
+/// Swap in a fresh hook. Windows removes a low-level hook without telling anyone
+/// once it has been slow to answer, and only installing a new one brings it back.
+fn reinstall() {
+    use windows::Win32::UI::WindowsAndMessaging::{PostThreadMessageW, WM_QUIT};
+
+    uninstall();
+    let old = HOOK_THREAD.swap(0, Ordering::SeqCst);
+    if old != 0 {
+        unsafe {
+            let _ = PostThreadMessageW(old, WM_QUIT, WPARAM(0), LPARAM(0));
+        }
+    }
+    let ok = spawn_hook_thread();
+    crate::logln!("keyboard hook reinstalled -> {ok}");
+}
+
+fn now_ms() -> u64 {
+    static T0: OnceLock<std::time::Instant> = OnceLock::new();
+    T0.get_or_init(std::time::Instant::now).elapsed().as_millis() as u64
+}
+
+/// Whether anything other than the Win keys is held: a key, or a mouse button.
+/// Either makes this press a combination, which Windows never opens Start for.
+fn other_input_held() -> bool {
+    let fresh_inject = now_ms().saturating_sub(LAST_INJECT_MS.load(Ordering::Relaxed)) < 120;
+    (0x01..=0xFEi32).any(|vk| {
+        // The Win keys themselves, and our own Ctrl tap just after injecting it.
+        if vk == 0x5B || vk == 0x5C {
+            return false;
+        }
+        if fresh_inject && matches!(vk, 0x11 | 0xA2 | 0xA3) {
+            return false;
+        }
+        held(vk)
+    })
+}
+
+/// Whether Windows' own Start - or the search pane a bare Win press opens on some
+/// builds - is the window in front.
+fn windows_start_in_front() -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetWindowThreadProcessId};
+
+    let Some(h) = crate::win::apps::foreground_window() else {
+        return false;
+    };
+    let mut buf = [0u16; 64];
+    let n = unsafe { GetClassNameW(h, &mut buf) }.max(0) as usize;
+    if String::from_utf16_lossy(&buf[..n]) != "Windows.UI.Core.CoreWindow" {
+        return false;
+    }
+    let mut pid = 0u32;
+    unsafe { GetWindowThreadProcessId(h, Some(&mut pid)) };
+    crate::win::apps::exe_path_for_pid(pid)
+        .and_then(|p| p.file_name().map(|f| f.to_string_lossy().to_lowercase()))
+        .is_some_and(|f| f == "startmenuexperiencehost.exe" || f == "searchhost.exe")
+}
+
+fn press_escape() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+        KEYEVENTF_KEYUP, VK_ESCAPE,
+    };
+    let key = |flags: KEYBD_EVENT_FLAGS| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: VK_ESCAPE,
+                wScan: 0,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: INJECTED_BY_US,
+            },
+        },
+    };
+    unsafe {
+        SendInput(&[key(KEYBD_EVENT_FLAGS(0)), key(KEYEVENTF_KEYUP)], std::mem::size_of::<INPUT>() as i32);
+    }
+}
+
+/// Watch the Win key from outside the hook, and cover every press the hook missed.
+///
+/// Reads key state only (`GetAsyncKeyState`), on its own thread, so it sits in
+/// nobody's input path. It polls every 5ms while Win is down and 10ms otherwise;
+/// a deliberate tap is held for 50ms or more, so no press slips between samples.
+pub fn start_guard() {
+    use std::time::{Duration, Instant};
+
+    std::thread::spawn(|| {
+        let mut was_down = false;
+        // This press was not seen by the hook, so it is the guard's to handle.
+        let mut blind = false;
+        let mut seq_at_press = 0u64;
+        let mut used = false;
+        let mut was_open_at_press = false;
+        // A bare press just ended: if Windows Start opens now, close it. Carries
+        // whether that press meant "open the launcher".
+        let mut watch_start: Option<(Instant, bool)> = None;
+        let mut last_reinstall: Option<Instant> = None;
+
+        loop {
+            let enabled = LAUNCHER_ENABLED.load(Ordering::Relaxed);
+            let down = held(0x5B) || held(0x5C);
+
+            if down && !was_down {
+                seq_at_press = PRESS_SEQ.load(Ordering::Relaxed);
+                // The async key state only changes after the hook has returned, so
+                // if the hook saw this press it has already said so.
+                blind = !WIN_DOWN.load(Ordering::Relaxed);
+                used = false;
+                was_open_at_press = LAUNCHER_OPEN.load(Ordering::SeqCst);
+                if blind && enabled {
+                    mask_held_win();
+                }
+            }
+            if down && !used && other_input_held() {
+                used = true;
+            }
+            if !down && was_down {
+                let hook_saw_it = PRESS_SEQ.load(Ordering::Relaxed) != seq_at_press;
+                if blind && enabled && !used && !hook_saw_it {
+                    crate::logln!("win guard: the hook missed a Win press; handled here");
+                    send(Key::Launcher);
+                }
+                if !used && enabled {
+                    watch_start = Some((Instant::now(), !was_open_at_press));
+                }
+                // A press the hook missed while someone else's window had focus
+                // means the hook is gone, not merely blind to our own windows.
+                let ours = crate::win::apps::foreground_window()
+                    .is_some_and(|h| crate::win::apps::is_our_window(h.0 as isize));
+                let due = last_reinstall.map_or(true, |t| t.elapsed() > Duration::from_secs(2));
+                if blind && !hook_saw_it && !ours && due {
+                    last_reinstall = Some(Instant::now());
+                    reinstall();
+                }
+                // The key is up; a release the hook never saw must not leave it
+                // thinking Win is still held.
+                WIN_DOWN.store(false, Ordering::Relaxed);
+                blind = false;
+            }
+            was_down = down;
+
+            if let Some((at, wanted_open)) = watch_start {
+                if at.elapsed() > Duration::from_millis(900) {
+                    watch_start = None;
+                } else if windows_start_in_front() {
+                    watch_start = None;
+                    crate::logln!("win guard: Windows Start opened anyway; closing it");
+                    press_escape();
+                    if wanted_open {
+                        send(Key::OpenLauncher);
+                    }
+                }
+            }
+
+            let busy = down || watch_start.is_some();
+            std::thread::sleep(Duration::from_millis(if busy { 5 } else { 10 }));
+        }
+    });
 }
 
 /// Take the hook back out. Idempotent; also happens automatically on process exit.

@@ -714,3 +714,121 @@
 .dock-search::-webkit-search-cancel-button {
   display: none;
 }
+
+/* ===========================================================================
+ * On the right edge
+ *
+ * The same bar stood on end: icons run top to bottom, the tray stacks under them,
+ * and it slides out sideways. The window is right-aligned and centred vertically
+ * (main.rs, reposition), and its spare room for labels is on the left, so the
+ * bar is pushed to the right-hand end of it.
+ * =========================================================================== */
+
+:root[data-edge="right"] .slider {
+  justify-content: flex-end;
+  align-items: center;
+}
+
+:root[data-edge="right"] .slider.hidden {
+  transform: translateX(100%);
+}
+
+:root[data-edge="right"] .dock {
+  flex-direction: column;
+}
+
+:root[data-edge="right"] .items {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+/* Magnification grows towards the screen, out of the edge, like the dock at the
+   bottom grows upward. */
+:root[data-edge="right"] .item {
+  transform-origin: right center;
+  transform: scale(var(--mag, 1)) translateX(calc(-1 * var(--lift, 0px)));
+}
+
+:root[data-edge="right"] .item.attention {
+  animation: none;
+}
+
+/* The running dot sits between the icon and the screen edge. */
+:root[data-edge="right"] .dot {
+  bottom: auto;
+  left: auto;
+  right: -6px;
+  top: 50%;
+  margin: -2px 0 0;
+}
+
+:root[data-edge="right"] .item.grouped .dot {
+  width: 4px;
+  height: 12px;
+  margin: -6px 0 0;
+}
+
+:root[data-edge="right"] .divider {
+  width: calc(var(--dock-icon) * 0.62);
+  height: 1px;
+  margin: 2px 0;
+}
+
+/* The search field becomes a round button; clicking it opens the same panel. */
+:root[data-edge="right"] .searchbar {
+  width: var(--dock-icon);
+  height: var(--dock-icon);
+  margin: 10px 0 2px;
+  padding: 0;
+  justify-content: center;
+}
+
+:root[data-edge="right"] .searchbar-text {
+  display: none;
+}
+
+:root[data-edge="right"] .searchbar-ico svg {
+  width: 18px;
+  height: 18px;
+}
+
+:root[data-edge="right"] .tray-sep {
+  width: auto;
+  height: 1px;
+  margin: 8px 6px;
+}
+
+:root[data-edge="right"] .tray {
+  flex-direction: column;
+  padding: 0 0 2px;
+}
+
+/* Wi-Fi, Bluetooth, sound and battery as a 2x2 block rather than a tall column. */
+:root[data-edge="right"] .tray-status {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  justify-items: center;
+  gap: 8px 6px;
+  padding: 8px 7px;
+}
+
+:root[data-edge="right"] .tray-batt svg {
+  width: 21px;
+}
+
+:root[data-edge="right"] .tray-clock {
+  align-items: center;
+  padding: 6px 4px;
+}
+
+:root[data-edge="right"] .tooltip {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform: translateX(3px) scale(0.96);
+  transform-origin: 100% 50%;
+}
+
+:root[data-edge="right"] .tooltip.show {
+  transform: none;
+}

@@ -1257,3 +1257,50 @@ old one to go.
 **Also:** a new Start glyph (four panes, the launcher's own shape) on a glass button
 that takes the tint; search is a field on the bar between the apps and the tray
 instead of an icon.
+
+## D-059 — A Win-key guard, the dock on the right, no hover resizes, and a passcode off switch (2026-11-01)
+
+**Start still opened sometimes.** The hook-only design had two holes. It is blind
+while one of our windows has focus (D-058 papered over that from the launcher page,
+which only works while that page actually has keyboard focus), and Windows silently
+removes a low-level hook that is ever slow to answer, after which *every* press went
+to Start until a restart. `hotkeys::start_guard` now runs beside the hook. It only
+*reads* the Win key's physical state (`GetAsyncKeyState`, 5–10ms), so it sits in no
+one's input path. The hook bumps a press counter, so the guard can tell which
+presses the hook saw. For a press it did not see, the guard masks it with a
+tagged Ctrl tap while Win is still down, which Windows treats as a combination,
+and toggles the launcher on release. Any other key or a mouse button held in
+between marks the press as a combination, and the guard leaves it alone. If the
+missed press happened while someone else's window had focus, the hook is gone, not
+merely blind, so it is reinstalled. As a last resort, if Windows' own Start (or
+SearchHost) comes to the front within 900ms of a bare press, the guard closes it
+with Esc and shows ours. The launcher page's own Meta handling is gone: with the
+guard as well, the launcher would toggle twice. The first run of the new build
+logged "the hook missed a Win press; handled here" on a real press.
+
+**The dock on the right edge** (`dockEdge`: "right" by default, "bottom" in
+Settings > Dock > Position). It is the same bar stood on end:
+- icons top to bottom, and the search field becomes a round button;
+- the tray stacks, with Wi-Fi/Bluetooth/sound/battery as a 2x2 block;
+- labels, menus and panels open to the left;
+- it slides out sideways.
+
+The window is right-aligned and vertically centred. The trigger is the right edge,
+but only alongside the dock (±40px): that edge is where maximised windows keep their
+scroll bars. Panels are now anchored in screen coordinates (`window.screenX/Y`) instead
+of window-relative ones.
+
+**The dock jumped while the pointer moved or scrolled across it.** Headroom for the
+label was granted on `pointerenter` of the icons and given back on `pointerleave`.
+Each of those is a window resize, and crossing that boundary repeatedly resized the
+window several times a second. Now the headroom is taken once when the bar slides
+out and given back 320ms after it slides away. No resize happens while the pointer
+is on the bar.
+
+**Off switch.** "Turn off" at the bottom of the quick panel asks for a passcode
+(`TURN_OFF_CODE` in main.rs, 8237). The panel cannot normally take keyboard focus,
+so it borrows the dock search's focus switch while the field is up. A right code
+removes the start-at-sign-in shortcut and runs `return_to_normal`, which brings back
+the taskbar, Start, Alt+Tab and the wallpaper, then quits. A wrong code shakes the
+field and does nothing else. It is a guard against stray clicks, not security: the
+tray's Quit and `restore-windows.ps1` still work.

@@ -59,6 +59,25 @@
         <p class="sub-note" id="wifi-note" hidden></p>
       </section>
 
+      <!-- Turning the whole UI layer off. Behind a passcode so a stray click on
+           the panel cannot take the dock away. -->
+      <section class="sub" id="off-sub" hidden>
+        <header class="sub-head">
+          <button class="sub-back" id="off-back" type="button" aria-label="Back">&#8249;</button>
+          <h2>Turn off macui</h2>
+        </header>
+        <p class="off-text">
+          Windows' own taskbar, Start and Alt+Tab come back, and macui will not start
+          again when you sign in. Enter the passcode to confirm.
+        </p>
+        <form class="off-form" id="off-form" autocomplete="off">
+          <input id="off-code" class="off-code" type="password" inputmode="numeric"
+                 maxlength="8" placeholder="Passcode" aria-label="Passcode" />
+          <button class="off-go" type="submit">Turn off</button>
+        </form>
+        <p class="off-error" id="off-error" hidden>That passcode is not right.</p>
+      </section>
+
       <div class="sliders" id="sliders-wrap">
         <div class="slider-row" id="bright-row" hidden>
           <span class="mini static" id="bright-icon" aria-hidden="true"></span>
@@ -80,6 +99,10 @@
 
       <nav class="links">
         <button data-page="ms-settings:" type="button">All Windows settings</button>
+        <button id="turn-off" class="turn-off" type="button" aria-label="Turn off macui">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3.5v8"/><path d="M6.6 6.8a7.5 7.5 0 1 0 10.8 0"/></svg>
+          Turn off
+        </button>
       </nav>
     </main>
 

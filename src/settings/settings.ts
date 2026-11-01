@@ -36,6 +36,7 @@ interface Settings {
   island: boolean;
   switcherEnabled: boolean;
   dockAlwaysVisible: boolean;
+  dockEdge: string;
   dockIconSize: number;
   dockMagnification: boolean;
   iconShape: string;
@@ -280,6 +281,7 @@ async function main(): Promise<void> {
 
   segment("theme", "theme");
   segment("iconShape", "iconShape");
+  segment("dockEdge", "dockEdge");
 
   toggle("dockEnabled", "dockEnabled");
   toggle("dockAlwaysVisible", "dockAlwaysVisible");

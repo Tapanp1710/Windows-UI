@@ -54,6 +54,8 @@ interface SystemPrefs {
   animationSpeed: number;
   magnification: boolean;
   alwaysVisible: boolean;
+  /** "right" or "bottom". */
+  dockEdge: string;
   iconSize: number;
 }
 
@@ -71,8 +73,13 @@ let prefs: SystemPrefs = {
   animationSpeed: 1,
   magnification: true,
   alwaysVisible: false,
+  dockEdge: "right",
   iconSize: 44,
 };
+
+/** The dock stands on the right edge: it runs top to bottom, and everything that
+ * pops out of it (labels, menus, panels) opens to its left. */
+const onRight = () => prefs.dockEdge !== "bottom";
 const nodes = new Map<string, HTMLDivElement>();
 
 /* ------------------------------------------------------------------ render */
@@ -218,7 +225,8 @@ let lastSize = { w: 0, h: 0 };
  * so the reserved strip is exactly where the user is looking anyway.
  */
 let headroom = 0;
-const TOOLTIP_HEADROOM = 46;
+/** Room for a label: above the bar at the bottom, beside it on the right. */
+const tooltipHeadroom = () => (onRight() ? 210 : 46);
 
 /** The resize for the current headroom, so a caller asking for the same amount
  * still waits until it has actually happened. */
@@ -241,13 +249,21 @@ function setHeadroom(px: number): Promise<void> {
 async function resizeWindowToContent(): Promise<void> {
   await new Promise(requestAnimationFrame);
 
-  const dockW = Math.ceil(dockEl.offsetWidth) + SHADOW_PAD * 2;
-  const popupW = menuEl.classList.contains("show")
-    ? Math.ceil(menuEl.offsetWidth) + SHADOW_PAD * 2
-    : 0;
-
-  const w = Math.max(dockW, popupW);
-  const h = Math.ceil(dockEl.offsetHeight) + SHADOW_PAD * 2 + headroom;
+  const menuOpen = menuEl.classList.contains("show");
+  let w: number;
+  let h: number;
+  if (onRight()) {
+    // Headroom is to the left of the bar; the window is right-aligned, so it grows
+    // away from the edge.
+    w = Math.ceil(dockEl.offsetWidth) + SHADOW_PAD * 2 + headroom;
+    const popupH = menuOpen ? Math.ceil(menuEl.offsetHeight) + SHADOW_PAD * 2 : 0;
+    h = Math.max(Math.ceil(dockEl.offsetHeight) + SHADOW_PAD * 2, popupH);
+  } else {
+    const dockW = Math.ceil(dockEl.offsetWidth) + SHADOW_PAD * 2;
+    const popupW = menuOpen ? Math.ceil(menuEl.offsetWidth) + SHADOW_PAD * 2 : 0;
+    w = Math.max(dockW, popupW);
+    h = Math.ceil(dockEl.offsetHeight) + SHADOW_PAD * 2 + headroom;
+  }
   if (w === lastSize.w && h === lastSize.h) return;
   lastSize = { w, h };
 
@@ -303,8 +319,17 @@ function placeTooltip(el: HTMLElement, text: string): void {
   const r = el.getBoundingClientRect();
   const d = dockEl.getBoundingClientRect();
   const tw = tooltipEl.offsetWidth;
-  const x = Math.min(Math.max(4, r.left + r.width / 2 - tw / 2), window.innerWidth - tw - 4);
-  const y = Math.max(2, d.top - tooltipEl.offsetHeight - 6);
+  const th = tooltipEl.offsetHeight;
+  let x: number;
+  let y: number;
+  if (onRight()) {
+    // Level with the icon, at a fixed distance left of the bar.
+    x = Math.max(2, d.left - tw - 8);
+    y = Math.min(Math.max(2, r.top + r.height / 2 - th / 2), window.innerHeight - th - 2);
+  } else {
+    x = Math.min(Math.max(4, r.left + r.width / 2 - tw / 2), window.innerWidth - tw - 4);
+    y = Math.max(2, d.top - th - 6);
+  }
   tooltipEl.style.translate = `${Math.round(x)}px ${Math.round(y)}px`;
 }
 
@@ -325,7 +350,7 @@ function showTooltip(el: HTMLElement, text: string): void {
   tooltipTimer = window.setTimeout(async () => {
     // Normally already granted on entering the bar; awaited so the label is placed
     // in the resized window, not the old one.
-    await setHeadroom(Math.max(headroom, TOOLTIP_HEADROOM));
+    await setHeadroom(Math.max(headroom, tooltipHeadroom()));
     if (tooltipFor !== el) return;
     tooltipEl.classList.add("instant");
     placeTooltip(el, text);
@@ -340,7 +365,19 @@ function hideTooltip(): void {
   tooltipFor = null;
   tooltipEl.classList.remove("show");
   tooltipEl.setAttribute("aria-hidden", "true");
-  if (!menuEl.classList.contains("show")) void setHeadroom(0);
+}
+
+/**
+ * The headroom the bar keeps while it is out: room for a label, held for as long
+ * as the dock is revealed and given back only once it has slid away.
+ *
+ * It used to be granted when the pointer entered the icons and given back when it
+ * left. Every one of those is a window resize, and running the pointer or the
+ * scroll wheel across the bar crossed that boundary over and over: the window was
+ * resized several times a second and the bar visibly jumped and flickered.
+ */
+function restingHeadroom(): number {
+  return revealed ? tooltipHeadroom() : 0;
 }
 
 /** Hide after a short grace, cancelled if the pointer reaches another icon. */
@@ -360,7 +397,7 @@ function closeMenu(): void {
   if (!menuEl.classList.contains("show")) return;
   menuEl.classList.remove("show");
   menuEl.textContent = "";
-  void setHeadroom(0);
+  void setHeadroom(restingHeadroom());
 }
 
 async function openMenu(anchor: HTMLElement, entries: MenuEntry[]): Promise<void> {
@@ -383,11 +420,24 @@ async function openMenu(anchor: HTMLElement, entries: MenuEntry[]): Promise<void
   // The icon sits SHADOW_PAD + the dock's own padding below the window top, so the
   // headroom has to cover the menu plus that offset. Measure after a frame so the
   // height reflects the real laid-out entries, not a pre-layout guess.
-  void setHeadroom(menuEl.offsetHeight + SHADOW_PAD + 16);
+  if (onRight()) {
+    await setHeadroom(Math.max(tooltipHeadroom(), menuEl.offsetWidth + 24));
+  } else {
+    void setHeadroom(menuEl.offsetHeight + SHADOW_PAD + 16);
+  }
   await resizeWindowToContent();
 
   const r = anchor.getBoundingClientRect();
   const mw = menuEl.offsetWidth;
+  if (onRight()) {
+    const d = dockEl.getBoundingClientRect();
+    const mh = menuEl.offsetHeight;
+    const x = Math.max(4, d.left - mw - 10);
+    const y = Math.min(Math.max(4, r.top + r.height / 2 - mh / 2), window.innerHeight - mh - 4);
+    menuEl.style.left = `${Math.round(x)}px`;
+    menuEl.style.top = `${Math.round(y)}px`;
+    return;
+  }
   const x = Math.min(
     Math.max(4, r.left + r.width / 2 - mw / 2),
     window.innerWidth - mw - 4,
@@ -417,12 +467,6 @@ itemsEl.addEventListener("pointermove", (e) => {
   applyMagnification(hit ? items.indexOf(hit.item) : null);
   if (hit) showTooltip(hit.el, hit.item.name);
   else hideTooltipSoon();
-});
-
-// Make room for the label as the pointer arrives, so the resize is done by the
-// time the label is due. Given back on leave, by hideTooltip.
-itemsEl.addEventListener("pointerenter", () => {
-  void setHeadroom(Math.max(headroom, TOOLTIP_HEADROOM));
 });
 
 itemsEl.addEventListener("pointerleave", () => {
@@ -589,13 +633,23 @@ itemsEl.addEventListener("dragend", () => {
 // Must match the `hidden` class in dock.html and the Rust sampler's initial state.
 let revealed = false;
 
+let concealTimer: number | undefined;
+
 function setRevealed(next: boolean): void {
   if (next === revealed) return;
   revealed = next;
   sliderEl.classList.toggle("hidden", !next);
-  if (!next) {
+  window.clearTimeout(concealTimer);
+  if (next) {
+    // Once per reveal, while the bar is still sliding in - see restingHeadroom().
+    void setHeadroom(Math.max(headroom, tooltipHeadroom()));
+  } else {
     hideTooltip();
     closeMenu();
+    // Given back after the slide, so the window does not shrink under it.
+    concealTimer = window.setTimeout(() => {
+      if (!revealed) void setHeadroom(0);
+    }, 320);
   }
 }
 
@@ -612,6 +666,12 @@ function applyPrefs(p: SystemPrefs): void {
   // The icon-size setting existed from PHASE 1 but nothing read it until the
   // settings window could change it.
   root.style.setProperty("--dock-icon", `${p.iconSize}px`);
+  const edge = onRight() ? "right" : "bottom";
+  if (root.dataset.edge !== edge) {
+    root.dataset.edge = edge;
+    headroom = restingHeadroom();
+    void resizeWindowToContent();
+  }
   // Settings can change this from the other window, so the pin follows rather than
   // only being written by its own click.
   if (document.getElementById("tray-pin")) paintPin(p.alwaysVisible);
@@ -704,12 +764,26 @@ const CAL_H = 330;
 
 function openPanelAbove(kind: string, anchor: HTMLElement, width: number, height: number): void {
   const r = anchor.getBoundingClientRect();
+  // Screen coordinates, in CSS pixels: the panel is a window of its own.
+  const sx = window.screenX;
+  const sy = window.screenY;
+  if (onRight()) {
+    // Out to the left of the bar, level with the button.
+    void invoke("cmd_open_panel", {
+      kind,
+      anchorX: sx + dockEl.getBoundingClientRect().left,
+      anchorY: sy + r.top + r.height / 2,
+      width,
+      height,
+    });
+    return;
+  }
   void invoke("cmd_open_panel", {
     kind,
-    anchorX: r.left + r.width / 2,
+    anchorX: sx + r.left + r.width / 2,
     width,
     height,
-    // The bar is at the bottom now, so its flyouts grow upward.
+    // The bar is at the bottom, so its flyouts grow upward.
     above: true,
   });
 }

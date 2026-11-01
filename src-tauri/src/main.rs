@@ -189,6 +189,7 @@ fn main() {
             cmd_set_start_at_login,
             cmd_set_wallpaper,
             cmd_return_to_normal,
+            cmd_turn_off,
             cmd_widget_data,
             cmd_media_control,
             cmd_set_widget_positions,
@@ -222,7 +223,6 @@ fn main() {
             cmd_launcher_open,
             cmd_launcher_reveal,
             cmd_launcher_close,
-            cmd_launcher_mask_win,
             cmd_launcher_power,
             cmd_shelf,
             cmd_shelf_add,
@@ -512,6 +512,7 @@ async fn cmd_open_panel(
     width: f64,
     height: f64,
     above: Option<bool>,
+    anchor_y: Option<f64>,
 ) -> Result<(), String> {
     logln!("open panel '{kind}' anchored at {anchor_x} ({width}x{height})");
     // One panel at a time: opening the calendar should dismiss quick settings, the
@@ -537,13 +538,18 @@ async fn cmd_open_panel(
     let logical_w = sw as f64 / scale;
     let logical_h = sh as f64 / scale;
     let margin = 12.0;
-    let x = (anchor_x - width / 2.0).clamp(margin, (logical_w - width - margin).max(margin));
+    let mut x = (anchor_x - width / 2.0).clamp(margin, (logical_w - width - margin).max(margin));
     // Clear of the dock, which is about 100 CSS px tall including its shadow pad.
-    let y = if above.unwrap_or(false) {
+    let mut y = if above.unwrap_or(false) {
         (logical_h - height - 104.0).max(margin)
     } else {
         52.0
     };
+    // From the dock on the right edge: open to its left, level with the button.
+    if let Some(ay) = anchor_y {
+        x = (anchor_x - width - 14.0).max(margin);
+        y = (ay - height / 2.0).clamp(margin, (logical_h - height - margin).max(margin));
+    }
     *PANEL_KIND.lock().unwrap() = kind.clone();
 
     let built = tauri::WebviewWindowBuilder::new(
@@ -800,6 +806,8 @@ struct SystemPrefs {
     animation_speed: f64,
     magnification: bool,
     always_visible: bool,
+    /// "right" or "bottom".
+    dock_edge: String,
     icon_size: u32,
     topbar_auto_hide: bool,
     topbar_app_pill: bool,
@@ -823,6 +831,7 @@ async fn cmd_system_prefs() -> SystemPrefs {
         animation_speed: s.animation_speed,
         magnification: s.dock_magnification,
         always_visible: s.dock_always_visible,
+        dock_edge: s.dock_edge,
         icon_size: s.dock_icon_size,
         topbar_auto_hide: s.topbar_auto_hide,
         topbar_app_pill: s.topbar_app_pill,
@@ -1000,13 +1009,16 @@ fn cmd_resize_dock(window: tauri::Window, css_width: f64, css_height: f64) -> ta
 }
 
 /// The dock window's visible island already carries its own 12px margin inside the
-/// shadow padding, so the window itself is flush with the bottom of the screen.
-/// Centre it horizontally; the CSS does the rest.
+/// shadow padding, so the window itself is flush with its screen edge: the bottom,
+/// centred horizontally, or the right, centred vertically. The CSS does the rest.
 fn reposition(window: &tauri::Window) -> tauri::Result<()> {
     let size = window.outer_size()?;
     let (sw, sh) = win::taskbar::screen_size();
-    let x = (sw - size.width as i32) / 2;
-    let y = sh - size.height as i32;
+    let (x, y) = if autohide::DOCK_RIGHT.load(Ordering::SeqCst) {
+        (sw - size.width as i32, (sh - size.height as i32) / 2)
+    } else {
+        ((sw - size.width as i32) / 2, sh - size.height as i32)
+    };
     window.set_position(tauri::PhysicalPosition::new(x, y))?;
     // Publish for the auto-hide sampler, which must never call back into the
     // window from its own thread (see autohide.rs).
@@ -1163,6 +1175,28 @@ fn return_to_normal(app: &tauri::AppHandle) {
 #[tauri::command]
 fn cmd_return_to_normal(app: tauri::AppHandle) {
     return_to_normal(&app);
+}
+
+/// The passcode for "Turn off macui" in the quick panel. Asked for so the UI layer
+/// is not switched off by a stray click, not as security: anyone at the keyboard
+/// can still quit it from the tray or run restore-windows.ps1.
+const TURN_OFF_CODE: &str = "8237";
+
+/// Switch the whole thing off: no start at sign-in, Windows put back exactly as it
+/// was (taskbar, Start, Alt+Tab, wallpaper), and the process gone. Returns false
+/// for a wrong code and does nothing else.
+#[tauri::command]
+fn cmd_turn_off(app: tauri::AppHandle, code: String) -> bool {
+    if code.trim() != TURN_OFF_CODE {
+        logln!("turn off: wrong passcode");
+        return false;
+    }
+    logln!("turn off: passcode accepted; removing start-at-sign-in and quitting");
+    if let Err(e) = startup::set(false) {
+        logln!("turn off: could not remove the startup shortcut: {e}");
+    }
+    return_to_normal(&app);
+    true
 }
 
 #[tauri::command]
@@ -1322,13 +1356,6 @@ async fn cmd_launcher_open(app: tauri::AppHandle, target: String) -> bool {
 fn cmd_launcher_reveal(app: tauri::AppHandle, path: String) -> bool {
     launcher::close(&app);
     win::pins::reveal_in_explorer(std::path::Path::new(&path))
-}
-
-/// The launcher saw the Win key go down while it had focus: stop that press from
-/// opening Start when it is released. See `hotkeys::mask_held_win`.
-#[tauri::command]
-fn cmd_launcher_mask_win() {
-    win::hotkeys::mask_held_win();
 }
 
 #[tauri::command]
@@ -1513,6 +1540,12 @@ fn apply_settings(app: &tauri::AppHandle, initial: bool) {
     // This is the only place the dock's "always visible" setting reaches the
     // sampler; before PHASE 6 it was stored and then never read.
     autohide::ALWAYS_VISIBLE.store(s.dock_always_visible, Ordering::SeqCst);
+    let right = s.dock_edge != "bottom";
+    if autohide::DOCK_RIGHT.swap(right, Ordering::SeqCst) != right {
+        // The page re-lays itself out on `dock:prefs` and resizes the window, which
+        // repositions it; this moves it straight away so it never sits mid-screen.
+        let _ = position_dock(app);
+    }
     autohide::TOPBAR_AUTO_HIDE.store(s.topbar_auto_hide, Ordering::SeqCst);
     win::hotkeys::ENABLED.store(s.switcher_enabled, Ordering::SeqCst);
     win::hotkeys::LAUNCHER_ENABLED.store(s.launcher_enabled, Ordering::SeqCst);

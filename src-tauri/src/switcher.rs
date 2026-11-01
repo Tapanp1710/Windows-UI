@@ -73,6 +73,8 @@ pub fn start(app: AppHandle) {
     if !win::hotkeys::install(tx) {
         return;
     }
+    // Covers the Win presses the hook cannot see - see the module comment there.
+    win::hotkeys::start_guard();
 
     // Fill the icon cache now, so even the first Alt+Tab opens at full speed.
     std::thread::spawn(|| {
@@ -113,6 +115,7 @@ pub fn start(app: AppHandle) {
                 // just "show a window", so there is nothing to gain from a second.
                 win::hotkeys::Key::Launcher => crate::launcher::toggle(&app),
                 win::hotkeys::Key::CloseLauncher => crate::launcher::close(&app),
+                win::hotkeys::Key::OpenLauncher => crate::launcher::open(&app),
             }
         }
     });

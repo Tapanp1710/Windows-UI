@@ -107,6 +107,13 @@ with no UAC prompt. Verified by installing and uninstalling it:
 | Copies `macui.exe`, `WebView2Loader.dll` and `uninstall.exe` | `%LOCALAPPDATA%\macui` | `%LOCALAPPDATA%\macui\uninstall.exe` (add `/S` for silent) |
 | Writes the Add/Remove Programs entry Windows expects | `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\macui` | removed by the same uninstaller |
 
+**Installed on this machine (2026-11-01)**, at the user's request that it keep
+running without VS Code: the installer above ran with `/S`, and
+`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\macui.lnk` points at
+`%LOCALAPPDATA%\macui\macui.exe` so it starts at sign-in. To undo it, use "Turn off"
+in the quick panel (passcode), which deletes the shortcut and restores Windows. You can
+also delete the shortcut yourself and run the uninstaller.
+
 Checked after uninstalling: the registry entry was gone and the folder held nothing but
 `macui.log`, this app's own runtime log, which is yours to delete. You do not have to
 run the installer at all — the `.exe` in `src-tauri/target/release` runs as it stands.

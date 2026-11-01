@@ -44,6 +44,8 @@ const POLL_ACTIVE: Duration = Duration::from_millis(20);
 
 /// Set from settings; when true the dock never auto-hides.
 pub static ALWAYS_VISIBLE: AtomicBool = AtomicBool::new(false);
+/// Set from settings: the dock stands on the right edge instead of the bottom one.
+pub static DOCK_RIGHT: AtomicBool = AtomicBool::new(true);
 
 /// The sampler's current reveal state.
 ///
@@ -100,13 +102,22 @@ pub fn start(app: AppHandle) -> Arc<AtomicBool> {
         TOPBAR_REVEALED.store(false, Ordering::SeqCst);
         crate::logln!("autohide sampler started");
 
-        let (_, screen_h) = crate::win::taskbar::screen_size();
+        let (screen_w, screen_h) = crate::win::taskbar::screen_size();
 
         while stop.load(Ordering::Relaxed) {
             let always = ALWAYS_VISIBLE.load(Ordering::Relaxed);
             let (cx, cy) = crate::win::cursor_pos();
 
-            let at_edge = cy >= screen_h - TRIGGER_PX;
+            let at_edge = if DOCK_RIGHT.load(Ordering::Relaxed) {
+                // Only alongside the dock itself, not the whole edge: the right edge
+                // is where every maximised window keeps its scroll bar, and a dock
+                // that slid out over it on every scroll would be in the way.
+                let span = *DOCK_RECT.lock().unwrap();
+                cx >= screen_w - TRIGGER_PX
+                    && span.map_or(true, |(_, t, _, b)| cy >= t - 40 && cy < b + 40)
+            } else {
+                cy >= screen_h - TRIGGER_PX
+            };
             // Stay up while the pointer is actually on the dock, so it does not
             // slide away from under the cursor mid-click.
             let want = always || at_edge || (revealed && cursor_over_dock(cx, cy));
