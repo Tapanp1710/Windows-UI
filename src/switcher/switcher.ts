@@ -101,16 +101,16 @@ function layoutFor(n: number): void {
   const disc = Math.round(Math.min(DISC_MAX, window.screen.height * DISC_SHARE));
   // Icons as large as the disc allows, shrunk further when there are many windows
   // so neighbours never overlap.
-  let item = Math.min(64, Math.max(32, disc * 0.1));
-  // The selected icon grows to 1.24x; it must stay inside the rim.
-  let ring = disc / 2 - (item * 1.24) / 2 - 12;
-  const room = (2 * Math.PI * ring) / Math.max(n, 1) - 12;
+  let item = Math.min(96, Math.max(40, disc * 0.135));
+  // The selected icon grows to 1.16x (switcher.css); it must stay inside the rim.
+  let ring = disc / 2 - (item * 1.16) / 2 - 10;
+  const room = (2 * Math.PI * ring) / Math.max(n, 1) - 10;
   if (room < item) {
-    item = Math.max(26, room);
-    ring = disc / 2 - (item * 1.24) / 2 - 12;
+    item = Math.max(30, room);
+    ring = disc / 2 - (item * 1.16) / 2 - 10;
   }
   // The preview and its title fit inside the ring of icons.
-  const shotW = Math.round(disc * 0.48);
+  const shotW = Math.round(disc * 0.45);
   const shotH = Math.round(shotW * 0.57);
 
   const root = document.documentElement.style;
