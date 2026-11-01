@@ -1382,3 +1382,14 @@ two switchers would answer one swipe.
 
 Settings > "Three-finger swipe on the touchpad opens it" switches the whole thing
 off, and gives Windows its swipe back.
+
+**Follow-up (tested by the user).**
+- **macui's side works:** the log shows "three fingers down" and "three-finger swipe
+  -> switcher" for every swipe, and the carousel opened behind Windows' own switcher.
+- **Windows' side:** Windows' own switcher still appeared. The registry value
+  plus WM_SETTINGCHANGE is not enough; Explorer, which runs the gestures, reads the
+  value only when it starts.
+- **Fix applied:** Explorer was restarted once (no folder windows were open), and
+  macui re-hid the taskbar within the second.
+- **The same applies the other way:** after Turn off or switching the feature
+  off, Windows' own swipe returns at the next sign-in or Explorer restart.
